@@ -70,10 +70,26 @@ curl -X POST http://localhost:8000/memory/query \
 `grounded=True` only if top score ≥ τ=0.45. If `grounded=False`, `answer_draft` = safe refusal.
 LLM in voice agent uses ONLY facts in `items[]`. Never invents people/events/dates.
 
-## .env gotchas
-- The `.env` file sometimes has spaces around `=` (e.g. `KEY= value`). config.py strips them automatically.
-- Moss vars may appear as `MOSS_ID` / `MOSS_API_KEY` (legacy) — config.py aliases them to MOSS_PROJECT_ID / MOSS_PROJECT_KEY.
-- Always read from `root/.env` (not packages/memory-engine/.env — there isn't one).
+## .env gotchas — read this first
+The `.env` is being corrupted by editor sync (Cursor/Windsurf) on every session. **Run this before starting any work:**
+```bash
+python3 -c "
+import re
+content = open('.env').read()
+fixed = content.replace('sk-apiiH6H2', 'sk-api-iH6H2')
+lines = []
+for line in fixed.splitlines(keepends=True):
+    s = line.strip()
+    if not s or s.startswith('#'): lines.append(line); continue
+    m = re.match(r'([A-Z0-9_]+)\s*=\s*(.*)', s)
+    if m: lines.append(m.group(1) + '=' + m.group(2).strip().rstrip('/') + '\n')
+    else: lines.append(line)
+open('.env', 'w').writelines(lines)
+"
+```
+- `MINIMAX_API_KEY` loses its dash: `sk-apiiH6H2` → must be `sk-api-iH6H2`. Wrong key = silent 1004 auth fail.
+- Spaces around `=` and MOSS_ID/MOSS_API_KEY aliases — config.py handles these automatically.
+- Always read from root `.env` (not packages/memory-engine/.env — there isn't one).
 
 ## Next steps for Track B
 1. Start server + run smoke test: `uvicorn app.main:app --reload --port 8000` then `pytest tests/smoke_test.py -s -v`
