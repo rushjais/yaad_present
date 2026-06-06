@@ -1,63 +1,78 @@
 # Track A — Voice Agent · CLAUDE.md
 **Owner: Rushil** · Before you code: re-read this file + root STATUS.md. After you code: update them.
 
-## Language scope
-**English only for now.** Drop all Hindi/multilingual logic. Language can be added later — the `lang` field exists in the contract but the memory engine currently ignores it and always returns English. Pass `"lang": "en"` on every call.
+## Current phase: A0 — start now
 
-## What Track B has ready for you (all endpoints live on :8000)
-- `GET  /health` — confirms memory-engine is up
-- `POST /memory/query   {text, lang:"en"}` → `{items, grounded, confidence, answer_draft}`
-- `POST /memory/temporal {text, lang:"en"}` → same shape — use for "pills today" / "is X coming"
-- `POST /memory/write   {type, payload}` → `{id}`
-- `GET  /reminders/due` → `{due:[{kind, text, ref}]}`
-- All return fixture payloads until Moss/Supabase keys are in `.env` — safe to code against right now.
+## Keys confirmed — copy these into your code
+| Service | Key var in `.env` | Endpoint / notes |
+|---|---|---|
+| **Groq LLM** | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` — OpenAI-compatible. Model: `llama-3.3-70b-versatile` |
+| **Groq STT** | `GROQ_API_KEY` | `https://api.groq.com/openai/v1/audio/transcriptions` — model `whisper-large-v3`. No Deepgram needed. |
+| **MiniMax TTS** | `MINIMAX_API_KEY`, `MINIMAX_GROUP_ID` | `POST https://api.minimaxi.chat/v1/t2a_v2` — model `speech-02-hd`, voice `Wise_Woman`. **Use `api.minimaxi.chat`, NOT `api.minimax.chat`.** |
+| **LiveKit** | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Keys in `.env`. Transport setup: [CONFIRM at office hours]. |
+| **TrueFoundry** | `TRUEFOUNDRY_API_KEY` | Key in `.env` but `TRUEFOUNDRY_BASE_URL` is empty — use Groq until confirmed. |
 
-## Grounding system prompt (use verbatim — frozen)
-```
-You are Yaad, a warm companion for someone with memory loss.
-State ONLY facts in the provided MEMORY context.
-If empty or low-confidence, say you're not sure and offer to check with the family.
-Never invent people, events, or dates.
-Short, calm, warm. English only.
-```
+## Memory engine (Track B) — live at :8000
+All endpoints return fixture JSON until the server is running with Moss/Supabase keys. Real grounded data is live once `uvicorn` starts.
 
-## memory_client.py — copy this exactly
+### Call pattern — copy this exactly
 ```python
 import httpx, os
 BASE = os.getenv("MEMORY_ENGINE_URL", "http://localhost:8000")
 
 async def query(text: str) -> dict:
     async with httpx.AsyncClient() as c:
-        r = await c.post(f"{BASE}/memory/query", json={"text": text, "lang": "en"}, timeout=3.0)
+        r = await c.post(f"{BASE}/memory/query",
+                         json={"text": text, "lang": "en"}, timeout=3.0)
         return r.json()
 
 async def temporal(text: str) -> dict:
     async with httpx.AsyncClient() as c:
-        r = await c.post(f"{BASE}/memory/temporal", json={"text": text, "lang": "en"}, timeout=3.0)
+        r = await c.post(f"{BASE}/memory/temporal",
+                         json={"text": text, "lang": "en"}, timeout=3.0)
         return r.json()
 ```
 
-## Fixture fallback contract (fallback.py)
-If any memory/TTS/vision call times out (3s) → serve `fixtures/<beat>.json` answer_draft + cached TTS.
-Beat → fixture map:
-- who-is-this → `fixtures/who_is_leo.json`
-- pills-today → `fixtures/pills_today.json`
-- add-fact-live → `fixtures/add_fact_live.json`
-- wifi-off → `fixtures/wifi_off.json`
+Response shape: `{items: [{ref, type, text, score, provenance}], grounded: bool, confidence: float, answer_draft: str|null}`
+
+- `grounded=True` + `items` non-empty → use `items` as LLM context
+- `grounded=False` → `answer_draft` is already a safe refusal — speak it directly, skip LLM
+
+## Grounding system prompt (use verbatim — frozen)
+```
+You are Yaad, a warm companion for someone with memory loss.
+State ONLY facts in the provided MEMORY context.
+If the context is empty or low-confidence, say you're not sure and offer to check with the family.
+Never invent people, events, or dates.
+Short, calm, warm. English only.
+```
+
+## Fixture fallback — required for demo resilience
+If any memory/TTS call times out (3s) → serve the matching fixture + cached TTS.
+
+| Demo beat | Fixture file | Trigger phrase |
+|---|---|---|
+| who-is-this | `fixtures/who_is_leo.json` | "Who is this?" / "Who is Leo?" |
+| pills-today | `fixtures/pills_today.json` | "Did I take my pills?" |
+| add-fact-live | `fixtures/add_fact_live.json` | "Tell me about Leo's birthday" |
+| wifi-off | `fixtures/wifi_off.json` | Any query when memory engine is unreachable |
 
 Header `X-Yaad-Source: live | cached` on every response.
 
-## Your next steps (in order)
-1. **[CONFIRM at office hours]** Deepgram streaming STT exact call + partial-transcript event name
-2. **[CONFIRM at office hours]** LiveKit / Pipecat exact transport + VAD setup
-3. **[CONFIRM at office hours]** TrueFoundry base_url + model name
-4. **[CONFIRM at office hours]** MiniMax streaming TTS (English voice id + group id)
-5. Scaffold `agent.py` + `transports.py` + `memory_client.py` (copy pattern above) against fixture stubs (A0)
-6. Wire Deepgram STT + MiniMax echo loop — speak in → transcribed → spoken back (A1)
-7. Plug in real `/memory/query` + grounding prompt + barge-in (A2)
-8. Latency pass: speculative fire on partial transcript → <~1s (A3)
-9. `fallback.py`: 3s timeout → fixture + cached TTS, `X-Yaad-Source` header (A4)
-10. Reminders: scheduler polls `/reminders/due` → proactive TTS (A5)
-11. Cache TTS clips for the 4 fixture beats (needed for wifi-off demo)
+**Pre-cache TTS clips for the 4 fixtures** before the demo. These are needed for the wifi-off beat.
 
-## Phase: not started — update this file as you build
+## Language scope
+**English only.** Pass `"lang": "en"` on every memory call. Hindi is a future add-on.
+
+## Your next steps (in order)
+1. **[CONFIRM at office hours]** LiveKit/Pipecat exact transport + VAD setup
+2. **[CONFIRM at office hours]** TrueFoundry base_url + model (use Groq in the meantime)
+3. Scaffold `agent.py` + `transports.py` + `memory_client.py` (copy pattern above). Hit fixture stubs to verify the loop. (A0)
+4. Wire Groq Whisper STT + MiniMax TTS echo loop — speak → transcribe → speak back. (A1)
+5. Plug in real `/memory/query` + grounding prompt + barge-in on VAD. (A2)
+6. Latency pass: fire memory query speculatively on partial transcript → target <~1s end-to-end. (A3)
+7. `fallback.py`: 3s timeout on any call → fixture JSON + cached TTS + `X-Yaad-Source: cached`. (A4)
+8. Proactive reminders: scheduler polls `GET /reminders/due` at medication times → proactive TTS. (A5)
+9. Pre-cache TTS audio for all 4 fixture beats (needed for wifi-off demo).
+
+## Phase: A0 — update this section as you build
