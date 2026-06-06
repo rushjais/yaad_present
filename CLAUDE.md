@@ -120,7 +120,7 @@ TWILIO_ACCOUNT_SID=  TWILIO_AUTH_TOKEN=  TWILIO_FROM=
 
 ---
 
-## 5. TRACK B — Memory Engine [OWNER: Rushil] (the technical hero)
+## 5. TRACK B — Memory Engine [OWNER: Rushil]
 Turn Moss retrieval into a grounded, temporal, traversable memory graph behind the §3 API. **Keep `packages/memory-engine/CLAUDE.md` + STATUS.md current as you go (§0.5).**
 - **B0 (hour 1, all-hands):** finalize `schemas.py` == CONTRACT; export OpenAPI; FastAPI with fixture stubs so A/C unblock.
 - **B1 — Moss + write/index:** `moss_client.py` index/query/**instant upsert** [CONFIRM + on-device mode]; `/memory/write`. **Verify instant-update at office hours first**; if on-device shaky → Moss-cloud + reframe wifi-off as "edge-ready."
