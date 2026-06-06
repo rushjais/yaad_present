@@ -1,0 +1,25 @@
+# secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# node / next
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# os / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
