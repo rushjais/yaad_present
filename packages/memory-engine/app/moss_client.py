@@ -1,6 +1,7 @@
 """
 Moss client abstraction.
-[CONFIRM] at office hours: on-device/WASM vs cloud, exact SDK calls, cross-lingual embeddings.
+[CONFIRM] at office hours: on-device/WASM vs cloud, exact SDK calls.
+Language: English only for now. Cross-lingual embeddings are a future add-on.
 
 Current impl: REST API against MOSS_BASE_URL.
 If Moss provides a Python SDK, swap _request() for the SDK calls — interface stays the same.
@@ -70,8 +71,7 @@ class MossClient:
     ) -> list[dict]:
         """
         Semantic search. Returns list of {id, text, score, metadata}.
-        Cross-lingual embeddings [CONFIRM] — Moss should handle Hindi queries
-        matching English-stored items natively.
+        English only for now. lang param reserved for future multilingual add-on.
         """
         body: dict[str, Any] = {
             "query": text,

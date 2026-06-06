@@ -1,6 +1,6 @@
 {
   "beat": "wifi-off",
   "note": "All 5 beats served from these fixtures when memory-engine is unreachable. Voice agent fallback.py uses these with cached TTS.",
-  "beats": ["who_is_leo.json", "pills_today.json", "add_fact_live.json", "hindi.json"],
+  "beats": ["who_is_leo.json", "pills_today.json", "add_fact_live.json"],
   "cached_tts_dir": "fixtures/tts/"
 }

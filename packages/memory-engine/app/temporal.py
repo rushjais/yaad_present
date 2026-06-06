@@ -72,13 +72,11 @@ async def _handle_pills_today(lang: str) -> dict:
             score=1.0,
             provenance=prov,
         )
-        draft_en = f"Yes, you took your pill at {time_str} this morning."
-        draft_hi = f"Haan, aapne aaj subah {time_str} baje dawai li thi."
         return {
             "items": [item.model_dump()],
             "grounded": True,
             "confidence": 1.0,
-            "answer_draft": draft_hi if lang.startswith("hi") else draft_en,
+            "answer_draft": f"Yes, you took your pill at {time_str} this morning.",
         }
     else:
         item = RetrievedItem(
@@ -88,13 +86,11 @@ async def _handle_pills_today(lang: str) -> dict:
             score=0.95,
             provenance=prov,
         )
-        draft_en = "Not yet today. Would you like me to remind you?"
-        draft_hi = "Aaj abhi tak nahi li. Kya aapko yaad dilaaun?"
         return {
             "items": [item.model_dump()],
             "grounded": True,
             "confidence": 0.95,
-            "answer_draft": draft_hi if lang.startswith("hi") else draft_en,
+            "answer_draft": "Not yet today. Would you like me to remind you?",
         }
 
 

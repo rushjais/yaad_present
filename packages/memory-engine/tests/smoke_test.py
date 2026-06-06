@@ -44,12 +44,12 @@ def test_health():
 # Core beat 1: who-is-this
 # ---------------------------------------------------------------------------
 
+# Language: English only. Multilingual support is a future add-on.
 QUERY_CASES = [
     ("Who is Leo?",            "en", True,  "person"),
     ("Tell me about Sarah.",   "en", True,  "person"),
-    ("Leo kaun hai?",          "hi", True,  "person"),  # Hindi cross-lingual
-    ("Who is the president?",  "en", False, None),       # should NOT be grounded
-    ("What is my dog's name?", "en", False, None),       # not in memory → refusal
+    ("Who is the president?",  "en", False, None),
+    ("What is my dog's name?", "en", False, None),
     ("Tell me about the park near home.", "en", True, "place"),
 ]
 
@@ -85,11 +85,10 @@ def test_memory_query(text, lang, expect_grounded, expect_type):
 # ---------------------------------------------------------------------------
 
 TEMPORAL_CASES = [
-    ("Did I take my pills today?",     "en"),
-    ("Have I had my medicine?",        "en"),
-    ("Kya maine aaj dawai li?",        "hi"),  # Hindi temporal
-    ("Is Sarah coming today?",         "en"),
-    ("When is Leo visiting?",          "en"),
+    ("Did I take my pills today?", "en"),
+    ("Have I had my medicine?",    "en"),
+    ("Is Sarah coming today?",     "en"),
+    ("When is Leo visiting?",      "en"),
 ]
 
 @pytest.mark.parametrize("text,lang", TEMPORAL_CASES)
@@ -180,40 +179,34 @@ def test_safe_refusal_en():
             f"Safe refusal missing expected phrase: {draft!r}"
 
 
-def test_safe_refusal_hi():
-    data, _ = post("/memory/query", {"text": "Mangal grah ka pradhanmantri kaun hai?", "lang": "hi"})
-    if not data["grounded"]:
-        draft = data.get("answer_draft", "")
-        assert len(draft) > 0, "Hindi safe refusal was empty"
-
-
 # ---------------------------------------------------------------------------
 # Print eval table (run with -s to see)
 # ---------------------------------------------------------------------------
 
 def test_eval_table(capsys):
+    # Language: English only. Multilingual is a future add-on.
     cases = [
-        ("Who is Leo?", "en"),
-        ("Leo kaun hai?", "hi"),
+        ("Who is Leo?",               "en"),
+        ("Tell me about Sarah.",       "en"),
         ("Did I take my pills today?", "en"),
-        ("Is Sarah coming today?", "en"),
-        ("Tell me about home.", "en"),
-        ("Who is the president?", "en"),
-        ("What is 2+2?", "en"),
+        ("Is Sarah coming today?",     "en"),
+        ("Tell me about home.",        "en"),
+        ("Who is the president?",      "en"),
+        ("What is 2+2?",              "en"),
     ]
     rows = []
     for text, lang in cases:
         try:
             d, ms = post("/memory/query" if "pill" not in text.lower() else "/memory/temporal",
                          {"text": text, "lang": lang})
-            rows.append((text, lang, d["grounded"], round(d["confidence"], 2), round(ms), d.get("answer_draft", "")[:60]))
+            rows.append((text, d["grounded"], round(d["confidence"], 2), round(ms), d.get("answer_draft", "")[:60]))
         except Exception as e:
-            rows.append((text, lang, "ERR", 0, 0, str(e)[:60]))
+            rows.append((text, "ERR", 0, 0, str(e)[:60]))
 
     with capsys.disabled():
         print("\n\n=== YAAD EVAL TABLE ===")
-        print(f"{'Query':45s} {'Lang':4s} {'G':5s} {'Conf':5s} {'ms':5s} {'Draft'}")
+        print(f"{'Query':45s} {'G':5s} {'Conf':5s} {'ms':5s} {'Draft'}")
         print("-" * 110)
         for r in rows:
-            print(f"{r[0]:45s} {r[1]:4s} {str(r[2]):5s} {str(r[3]):5s} {str(r[4]):5s} {r[5]}")
-        print("=" * 110)
+            print(f"{r[0]:45s} {str(r[1]):5s} {str(r[2]):5s} {str(r[3]):5s} {r[4]}")
+        print("=" * 100)

@@ -47,9 +47,13 @@ curl -X POST http://localhost:8000/memory/query -H 'Content-Type: application/js
 ```
 
 ## [CONFIRM] open items (needed at office hours)
-- **Moss SDK**: on-device/WASM vs cloud, exact Python SDK calls vs REST, cross-lingual embedding support, instant upsert latency. `moss_client.py` currently uses REST — swap if SDK provided.
-- **Moss wifi-off mode**: WASM sidecar port? Or bundle index locally? Affects demo beat 4.
+- **Moss SDK**: on-device/WASM vs cloud, exact Python SDK calls vs REST, instant upsert latency. `moss_client.py` currently uses REST — swap if SDK provided.
+- **Moss wifi-off mode**: WASM sidecar port? Or bundle index locally? Affects demo beat 4 (wifi-off).
 - **Vision**: on-device embedding (CLIP?) vs hosted VLM. Currently uses OpenAI gpt-4o-mini as fallback.
+
+## Language
+**English only for now.** The `lang` param is accepted by all endpoints but ignored — always English.
+Multilingual (Hindi, cross-lingual retrieval) is a future add-on. The `lang` field is kept in the contract so it can be wired later without a breaking schema change.
 
 ## Retrieval scoring
 `score = α·semantic(0.5) + β·recency(0.25) + γ·salience(0.15) + δ·graph_prox(0.10)`

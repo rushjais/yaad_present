@@ -42,8 +42,18 @@ cd packages/caregiver-web
 npx openapi-typescript ../../packages/shared/contract.openapi.json -o lib/types.ts
 ```
 
-## [CONFIRM] items for Raghav
-- Supabase: keys in .env (SUPABASE_URL, SUPABASE_SERVICE_KEY)
-- Memory engine URL: set NEXT_PUBLIC_MEMORY_ENGINE_URL=http://localhost:8000
+## Language scope
+**English only.** No Hindi/multilingual UI needed for now. Language is a future add-on.
+
+## Your next steps (in order)
+1. **[CONFIRM]** Get Supabase keys → fill `.env` (SUPABASE_URL, SUPABASE_SERVICE_KEY)
+2. Generate types: `npx openapi-typescript ../../packages/shared/contract.openapi.json -o lib/types.ts`
+3. Scaffold Next.js app + typed `lib/api.ts` (C0)
+4. Build add-memory forms: person / event / medication / story → `POST /memory/write` — **one-click fast, this is the add-fact-live beat** (C1)
+5. Run `python ../../scripts/seed_amma.py` to populate Amma's life (needs Supabase + Moss keys)
+6. Graph view: `MemoryGraph.tsx` (react-force-graph) + `/memory/timeline` timeline (C3)
+7. Care dashboard: "topics to reinforce with her" — **NO clinical/health score** (C4)
+8. Safety view: set home + safe-zone on map, ordered contacts, location + alert history (C5)
+9. Architecture diagram `docs/ARCHITECTURE.md` — Moss at center (C6)
 
 ## Phase: not started — update this file as you build

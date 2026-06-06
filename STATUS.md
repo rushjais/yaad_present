@@ -29,10 +29,14 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - `capture.py` is explicit-trigger only ("remember this…") — not live auto-capture.
 - fixtures/tts/*.mp3 files not yet generated — needed for wifi-off beat (voice agent caches TTS).
 
+## Language
+**English only.** Hindi / multilingual is a future add-on. `lang` param exists in the contract schema but is currently ignored — always English. No changes needed to wire it later.
+
 ## [CONFIRM] open items (resolve at office hours)
-- **Moss**: on-device/WASM vs cloud, exact SDK calls (moss_client.py built for REST), cross-lingual embedding support, instant-upsert latency target
-- **MiniMax**: Hindi voice id, streaming TTS endpoint, group id (Track A)
+- **Moss**: on-device/WASM vs cloud, exact SDK calls (moss_client.py built for REST), instant-upsert latency target
+- **MiniMax**: English voice id, streaming TTS endpoint, group id (Track A)
 - **Deepgram / LiveKit / Pipecat**: exact streaming STT call + partial-transcript events (Track A)
 - **TrueFoundry**: base_url + model name (Track A)
+- **Supabase**: keys needed to run seed_amma.py and enable real retrieval (Track B + C)
 - **Unsiloed**: parse API for document ingestion (Track C stretch)
 - **Twilio vs push**: for wander alerts (Track B location.py)
