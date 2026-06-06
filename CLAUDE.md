@@ -125,16 +125,16 @@ yaad/
   fixtures/                  # demo fallback payloads (§13)
   scripts/ (seed_amma.py, smoke_test.py)
   packages/
-    memory-engine/           # TRACK B — Python/FastAPI [OWNER: Rushil]
+    memory-engine/           # TRACK B — Python/FastAPI [OWNER: Keshav]
       CLAUDE.md              # ← living, track-local
       app/ (main, moss_client[CONFIRM], graph, retrieval, temporal, grounding,
             capture, schemas, db, location, vision, reminders)
       tests/
-    voice-agent/             # TRACK A — Python/Pipecat+LiveKit [OWNER: Keshav]
+    voice-agent/             # TRACK A — Python/Pipecat+LiveKit [OWNER: Rushil]
       CLAUDE.md              # ← living, track-local
-      (agent, transports[CONFIRM], tts_minimax[CONFIRM], stt_deepgram[CONFIRM],
+      (agent, transports[CONFIRM], tts_minimax[CONFIRM], stt_groq[CONFIRM],
        llm[CONFIRM], memory_client, reminders_client, fallback)
-    caregiver-web/           # TRACK C — Next.js/TS [OWNER: Person 3]
+    caregiver-web/           # TRACK C — Next.js/TS [OWNER: Raghav]
       CLAUDE.md              # ← living, track-local
       app/((dashboard), memories, timeline, graph, safety)
       lib/(api.ts, types.ts), components/(MemoryGraph.tsx)
@@ -166,7 +166,7 @@ yaad/
 ```
 MOSS_API_KEY=        # [CONFIRM on-device/WASM vs cloud]
 MOSS_INDEX=yaad_amma
-DEEPGRAM_API_KEY=
+GROQ_API_KEY=
 MINIMAX_API_KEY=     MINIMAX_GROUP_ID=   # TTS Hindi/English [CONFIRM voice id]
 LIVEKIT_URL=  LIVEKIT_API_KEY=  LIVEKIT_API_SECRET=
 TRUEFOUNDRY_API_KEY= # gateway→model [CONFIRM base_url+model]
@@ -177,7 +177,7 @@ TWILIO_ACCOUNT_SID=  TWILIO_AUTH_TOKEN=  TWILIO_FROM=
 
 ---
 
-## 5. TRACK B — Memory Engine [OWNER: Rushil]
+## 5. TRACK B — Memory Engine [OWNER: Keshav]
 Turn Moss retrieval into a grounded, temporal, traversable memory graph behind the §3 API. **Keep `packages/memory-engine/CLAUDE.md` + STATUS.md current as you go (§0.5).**
 - **B0 (hour 1, all-hands):** finalize `schemas.py` == CONTRACT; export OpenAPI; FastAPI with fixture stubs so A/C unblock.
 - **B1 — Moss + write/index:** `moss_client.py` index/query/**instant upsert** [CONFIRM + on-device mode]; `/memory/write`. **Verify instant-update at office hours first**; if on-device shaky → Moss-cloud + reframe wifi-off as "edge-ready."
@@ -191,16 +191,16 @@ Turn Moss retrieval into a grounded, temporal, traversable memory graph behind t
 
 ---
 
-## 6. TRACK A — Voice Agent (LiveKit + Pipecat + MiniMax) [OWNER: Keshav]
+## 6. TRACK A — Voice Agent (LiveKit + Pipecat + MiniMax) [OWNER: Rushil]
 Warm, low-latency, barge-in voice loop that grounds every answer. **Keep `packages/voice-agent/CLAUDE.md` + STATUS.md current.**
-Pipeline: `LiveKit → VAD → Deepgram STT → intent/lang → memory_client.query()/temporal() (speculative) → LLM (TrueFoundry) w/ grounding prompt → MiniMax TTS → playback`, **barge-in** on VAD.
+Pipeline: `LiveKit → VAD → Groq Whisper STT → intent/lang → memory_client.query()/temporal() (speculative) → LLM (TrueFoundry) w/ grounding prompt → MiniMax TTS → playback`, **barge-in** on VAD.
 **Grounding system prompt:** "You are Yaad, a warm companion for someone with memory loss. State ONLY facts in the provided MEMORY context. If empty/low-confidence, say you're not sure and offer to check with the family. Never invent people/events/dates. Short, calm, warm. Match the user's language (English/Hindi/Hinglish)."
-- **A0:** pipeline vs memory stubs (unblock early). **A1:** Deepgram + MiniMax echo loop [CONFIRM both; CONFIRM MiniMax Hindi voice]. **A2:** real memory calls + grounding + barge-in. **A3:** latency pass (speculative + streaming) → <~1s; build the latency overlay. **A4:** `fallback.py` fixtures on timeout. **A5:** proactive reminders via `/reminders/due` (§12).
+- **A0:** pipeline vs memory stubs (unblock early). **A1:** Groq + MiniMax echo loop [CONFIRM both; CONFIRM MiniMax Hindi voice]. **A2:** real memory calls + grounding + barge-in. **A3:** latency pass (speculative + streaming) → <~1s; build the latency overlay. **A4:** `fallback.py` fixtures on timeout. **A5:** proactive reminders via `/reminders/due` (§12).
 **Acceptance:** "who is Leo?" warm + grounded <~1s; interrupt halts TTS; kill memory-engine → 5 beats still answer from fixtures; Hindi Q → Hindi A; **docs match code.**
 
 ---
 
-## 7. TRACK C — Caregiver Web + Seeding + Dashboard + Timeline + Graph + Safety [OWNER: Person 3]
+## 7. TRACK C — Caregiver Web + Seeding + Dashboard + Timeline + Graph + Safety [OWNER: Raghav]
 The family's window. **Keep `packages/caregiver-web/CLAUDE.md` + STATUS.md current.**
 - **C0:** Next.js scaffold; `types.ts` from OpenAPI; typed `api.ts`.
 - **C1 — add-memory forms** (person/event/med/story) → `/memory/write` (drives add-fact-live; one-click fast).
@@ -254,4 +254,4 @@ Moss = hero (graph layer + instant updates + on-device) · MiniMax = voice (Hind
 Present Yaad as a capability *built on* Moss (a memory graph), not an app that uses it. Land one flawless live signature beat (add-fact-live). Emotion → engineering in the same 90s. Show, don't tell (let it talk). Make it adopt-able ("a pattern any Moss dev could reuse").
 
 ## 20. [CONFIRM] at the event
-Moss (on-device/WASM + instant upsert + cross-lingual embeddings + SDK) · MiniMax (Hindi voice id + streaming TTS + group id) · Deepgram / LiveKit / Pipecat exact calls · TrueFoundry base_url + model · Unsiloed parse API · push vs Twilio for alerts.
+Moss (on-device/WASM + instant upsert + cross-lingual embeddings + SDK) · MiniMax (Hindi voice id + streaming TTS + group id) · Groq / LiveKit / Pipecat exact calls · TrueFoundry base_url + model · Unsiloed parse API · push vs Twilio for alerts.
