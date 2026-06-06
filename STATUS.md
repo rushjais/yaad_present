@@ -36,7 +36,7 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 | Twilio | ✅ LIVE | Account active. SMS fires with current keys. |
 | LiveKit | ⚠️ UNVERIFIED | Keys in `.env`. wss:// URL not HTTP-testable. Will verify when agent connects. |
 | TrueFoundry | ❌ NEEDS base_url | Key in `.env` but workspace URL empty. Use Groq until confirmed. |
-| Unsiloed | ❌ NEEDS API URL | `api.unsiloed.ai` DNS fails. `app.unsiloed.ai` is web UI only. Check hackathon Slack. |
+| Unsiloed | ✅ LIVE | Base: `https://platformbackend.unsiloed.ai`. Auth: `Api-Key` header (not `Authorization: Bearer`). Upload: multipart `POST /api/v1/playground/upload-document` field `document` → `document_id`. Query: **form data** (not JSON) `POST /api/v1/playground/chat-with-document` fields `document_id` + `message` → structured response. Tested: extracted "Aspirin 100mg daily at 8am" from test PDF. |
 | Deepgram | ❌ NO KEY | Using Groq Whisper instead. No action needed. |
 | OpenAI | ❌ NO KEY | Optional — vision only. Skip for now. |
 
