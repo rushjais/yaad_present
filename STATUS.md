@@ -8,11 +8,11 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 
 ## Tracks
 
-### Track A — Voice (Keshav)
+### Track A — Voice (Rushil)
 - Phase: not started · Done: — · Blocked: waiting on MiniMax/Deepgram/TrueFoundry [CONFIRM]
 - Memory engine stubs ready at :8000 — safe to code memory_client.py against now.
 
-### Track B — Memory (Rushil)
+### Track B — Memory (Keshav)
 - Phase: B0–B6 complete + Moss SDK wired
 - Done: all modules built; moss_client.py now uses real SDK (SessionIndex, sub-10ms, instant upsert)
 - Blocked: needs MOSS_PROJECT_ID + MOSS_PROJECT_KEY (from portal.getmoss.dev) + Supabase keys to run seed_amma.py

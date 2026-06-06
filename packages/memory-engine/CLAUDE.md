@@ -1,5 +1,5 @@
 # Track B — Memory Engine · CLAUDE.md
-**Owner: Rushil** · Before you code: re-read this file + root STATUS.md. After you code: update them.
+**Owner: Keshav** · Before you code: re-read this file + root STATUS.md. After you code: update them.
 
 ## Current phase
 B1 complete (db.py + moss_client.py). B2–B6 complete (graph, retrieval, grounding, temporal, capture, reminders, location, vision, smoke_test). Gate 0 stubs live on all endpoints.

@@ -1,5 +1,5 @@
 # Track A — Voice Agent · CLAUDE.md
-**Owner: Keshav** · Before you code: re-read this file + root STATUS.md. After you code: update them.
+**Owner: Rushil** · Before you code: re-read this file + root STATUS.md. After you code: update them.
 
 ## Language scope
 **English only for now.** Drop all Hindi/multilingual logic. Language can be added later — the `lang` field exists in the contract but the memory engine currently ignores it and always returns English. Pass `"lang": "en"` on every call.

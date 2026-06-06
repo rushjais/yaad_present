@@ -15,7 +15,7 @@ Yaad is not a chatbot with a microphone. It's a memory layer that gives a person
 5. **STATUS.md** — live build log (kept current in the same commit as every change).
 
 ## Team / tracks
-Track A Voice — **Keshav** · Track B Memory — **Rushil** · Track C Caregiver Web — **Raghav**
+Track A Voice — **Rushil** · Track B Memory — **Keshav** · Track C Caregiver Web — **Raghav**
 
 ## Packages (created at Gate 0)
 `packages/memory-engine` (Python/FastAPI) · `packages/voice-agent` (Python/Pipecat+LiveKit) · `packages/caregiver-web` (Next.js/TS)
