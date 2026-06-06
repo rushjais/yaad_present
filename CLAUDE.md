@@ -1,7 +1,64 @@
 # Yaad — Final Production Build Spec (LiveKit + Pipecat + MiniMax)
 ### Conversational AI Hackathon · Moss (YC F25) @ Y Combinator · 3 people, full-time · ~20h
 
-> Drop this whole file in at the repo root as `CLAUDE.md`. Written so Claude Code + parallel agents build against it directly. **[CONFIRM]** = verify against live vendor docs/office-hours before wiring exact calls — never invent signatures.
+
+---
+
+## META-INSTRUCTIONS FOR CLAUDE CODE
+### (Andrej Karpathy principles + Yaad conventions)
+
+**Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.**
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+### 1. Think Before Coding — Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First — Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+### 3. Surgical Changes — Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+### 4. Goal-Driven Execution — Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals. For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently.
+
+### Yaad-specific conventions (merged with Karpathy principles):
+
+The Karpathy principles above are the *how*. Below are Yaad's *what* and *why*.
+
+- **Living docs are part of "done."** A change isn't done until its `CLAUDE.md`/`CONTRACT.md`/`STATUS.md` is updated in the **same commit**. Session bookends: re-read before you code, update after. No silent stubs.
+- **Don't assume the contract.** If an endpoint signature is unverified ([CONFIRM]), mark it and surface the blocker.
+- **Surface tradeoffs explicitly.** If a feature could be scoped narrower or if build-time is tight, name it in `STATUS.md` — don't silently half-build.
+- **Surgical changes to the core.** After Gate 2 (core flawless), the 5 core beats are frozen. New features go in branches. Don't touch the core unless it's a regression fix.
+- **Goal-driven on the demo beats.** Each of the 5 beats (who-is-this, pills-today, add-fact-live, wifi-off, Hindi) has a definition of done. Code to those, verify them, stop.
+
+---
 
 ---
 
