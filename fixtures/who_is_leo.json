@@ -1,0 +1,19 @@
+{
+  "beat": "who-is-this",
+  "query": {"text": "Who is Leo?", "lang": "en"},
+  "response": {
+    "items": [
+      {
+        "ref": "person:leo",
+        "type": "person",
+        "text": "Leo is your grandson. He's 22, studying computer science at Georgia Tech. He visits every Sunday and loves chess.",
+        "score": 0.96,
+        "provenance": {"source": "seed", "added_by": "seed_script", "added_ts": "2025-01-01T00:00:00Z"}
+      }
+    ],
+    "grounded": true,
+    "confidence": 0.96,
+    "answer_draft": "That's Leo, your grandson! He's 22 and visits every Sunday. He loves playing chess with you."
+  },
+  "cached_tts_file": "fixtures/tts/who_is_leo_en.mp3"
+}

@@ -1,0 +1,20 @@
+{
+  "beat": "add-fact-live",
+  "write": {"type": "person", "payload": {"name": "Ritu", "relationship": "neighbor", "notes": "Lives next door. Has a cat named Mango."}},
+  "query": {"text": "Who is Ritu?", "lang": "en"},
+  "response": {
+    "items": [
+      {
+        "ref": "person:ritu-fixture",
+        "type": "person",
+        "text": "Ritu is your neighbor. She lives next door and has a cat named Mango.",
+        "score": 0.93,
+        "provenance": {"source": "caregiver_web", "added_by": "caregiver", "added_ts": "2025-01-01T12:00:00Z"}
+      }
+    ],
+    "grounded": true,
+    "confidence": 0.93,
+    "answer_draft": "That's Ritu, your neighbor! She lives next door and has a cat named Mango."
+  },
+  "cached_tts_file": "fixtures/tts/add_fact_live_en.mp3"
+}

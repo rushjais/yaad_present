@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  memory-engine:
+    build: ./packages/memory-engine
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./fixtures:/app/fixtures
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  voice-agent:
+    build: ./packages/voice-agent
+    env_file: .env
+    depends_on:
+      memory-engine:
+        condition: service_healthy
+
+  caregiver-web:
+    build: ./packages/caregiver-web
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      - NEXT_PUBLIC_MEMORY_ENGINE_URL=http://memory-engine:8000
+    depends_on:
+      memory-engine:
+        condition: service_healthy

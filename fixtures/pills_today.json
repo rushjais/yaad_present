@@ -1,0 +1,19 @@
+{
+  "beat": "pills-today",
+  "query": {"text": "Did I take my pills today?", "lang": "en"},
+  "response": {
+    "items": [
+      {
+        "ref": "med_log:today",
+        "type": "med_log",
+        "text": "Heart pill taken at 8:00 AM today.",
+        "score": 1.0,
+        "provenance": {"source": "med_log_table", "added_by": "system", "added_ts": "2025-01-01T08:00:00Z"}
+      }
+    ],
+    "grounded": true,
+    "confidence": 1.0,
+    "answer_draft": "Yes, you took your white heart pill at 8 this morning."
+  },
+  "cached_tts_file": "fixtures/tts/pills_today_en.mp3"
+}

@@ -1,0 +1,818 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Yaad Memory Engine",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/memory/query": {
+      "post": {
+        "summary": "Memory Query",
+        "operationId": "memory_query_memory_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryQueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/temporal": {
+      "post": {
+        "summary": "Memory Temporal",
+        "operationId": "memory_temporal_memory_temporal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryQueryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/write": {
+      "post": {
+        "summary": "Memory Write",
+        "operationId": "memory_write_memory_write_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryWriteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/capture": {
+      "post": {
+        "summary": "Memory Capture",
+        "operationId": "memory_capture_memory_capture_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryCaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCaptureResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/timeline": {
+      "get": {
+        "summary": "Memory Timeline",
+        "operationId": "memory_timeline_memory_timeline_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reminders/due": {
+      "get": {
+        "summary": "Reminders Due",
+        "operationId": "reminders_due_reminders_due_get",
+        "parameters": [
+          {
+            "name": "ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Ts"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemindersResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/location/ping": {
+      "post": {
+        "summary": "Location Ping",
+        "operationId": "location_ping_location_ping_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationPingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationPingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vision/recognize": {
+      "post": {
+        "summary": "Vision Recognize",
+        "operationId": "vision_recognize_vision_recognize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionRecognizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionRecognizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "EntityType": {
+        "type": "string",
+        "enum": [
+          "person",
+          "place",
+          "event",
+          "medication",
+          "med_log",
+          "story",
+          "episode"
+        ],
+        "title": "EntityType"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "moss_ok": {
+            "type": "boolean",
+            "title": "Moss Ok"
+          },
+          "db_ok": {
+            "type": "boolean",
+            "title": "Db Ok"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "moss_ok",
+          "db_ok",
+          "latency_ms"
+        ],
+        "title": "HealthResponse"
+      },
+      "LocationAction": {
+        "type": "string",
+        "enum": [
+          "none",
+          "reassure",
+          "alert"
+        ],
+        "title": "LocationAction"
+      },
+      "LocationPingRequest": {
+        "properties": {
+          "lat": {
+            "type": "number",
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "title": "Lng"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "title": "LocationPingRequest"
+      },
+      "LocationPingResponse": {
+        "properties": {
+          "inside_zone": {
+            "type": "boolean",
+            "title": "Inside Zone"
+          },
+          "nearest_place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nearest Place"
+          },
+          "action": {
+            "$ref": "#/components/schemas/LocationAction"
+          },
+          "reassurance_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reassurance Text"
+          },
+          "contacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "inside_zone",
+          "nearest_place",
+          "action"
+        ],
+        "title": "LocationPingResponse"
+      },
+      "MemoryCaptureRequest": {
+        "properties": {
+          "transcript": {
+            "type": "string",
+            "title": "Transcript"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transcript"
+        ],
+        "title": "MemoryCaptureRequest"
+      },
+      "MemoryCaptureResponse": {
+        "properties": {
+          "created_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Created Refs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_refs"
+        ],
+        "title": "MemoryCaptureResponse"
+      },
+      "MemoryQueryRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "lang": {
+            "type": "string",
+            "title": "Lang",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "MemoryQueryRequest"
+      },
+      "MemoryQueryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievedItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "grounded": {
+            "type": "boolean",
+            "title": "Grounded"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "answer_draft": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Draft"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "grounded",
+          "confidence"
+        ],
+        "title": "MemoryQueryResponse"
+      },
+      "MemoryWriteRequest": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/MemoryWriteType"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "MemoryWriteRequest"
+      },
+      "MemoryWriteResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "MemoryWriteResponse"
+      },
+      "MemoryWriteType": {
+        "type": "string",
+        "enum": [
+          "person",
+          "place",
+          "event",
+          "medication",
+          "med_log",
+          "story",
+          "episode"
+        ],
+        "title": "MemoryWriteType"
+      },
+      "Provenance": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "added_by": {
+            "type": "string",
+            "title": "Added By"
+          },
+          "added_ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Added Ts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "added_by",
+          "added_ts"
+        ],
+        "title": "Provenance"
+      },
+      "ReminderItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "text",
+          "ref"
+        ],
+        "title": "ReminderItem"
+      },
+      "RemindersResponse": {
+        "properties": {
+          "due": {
+            "items": {
+              "$ref": "#/components/schemas/ReminderItem"
+            },
+            "type": "array",
+            "title": "Due"
+          }
+        },
+        "type": "object",
+        "required": [
+          "due"
+        ],
+        "title": "RemindersResponse"
+      },
+      "RetrievedItem": {
+        "properties": {
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EntityType"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref",
+          "type",
+          "text",
+          "score",
+          "provenance"
+        ],
+        "title": "RetrievedItem"
+      },
+      "TimelineBlock": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "entity_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entity Refs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "type",
+          "title",
+          "summary"
+        ],
+        "title": "TimelineBlock"
+      },
+      "TimelineResponse": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineBlock"
+            },
+            "type": "array",
+            "title": "Blocks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "blocks"
+        ],
+        "title": "TimelineResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VisionRecognizeRequest": {
+        "properties": {
+          "image_b64": {
+            "type": "string",
+            "title": "Image B64"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_b64"
+        ],
+        "title": "VisionRecognizeRequest"
+      },
+      "VisionRecognizeResponse": {
+        "properties": {
+          "match": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrievedItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answer_draft": {
+            "type": "string",
+            "title": "Answer Draft"
+          }
+        },
+        "type": "object",
+        "required": [
+          "match",
+          "answer_draft"
+        ],
+        "title": "VisionRecognizeResponse"
+      }
+    }
+  }
+}

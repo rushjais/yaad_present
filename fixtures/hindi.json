@@ -1,0 +1,19 @@
+{
+  "beat": "hindi-exchange",
+  "query": {"text": "Leo kaun hai?", "lang": "hi"},
+  "response": {
+    "items": [
+      {
+        "ref": "person:leo",
+        "type": "person",
+        "text": "Leo aapka pota hai. Woh 22 saal ka hai aur Georgia Tech mein padh raha hai. Har Ravivar aata hai.",
+        "score": 0.96,
+        "provenance": {"source": "seed", "added_by": "seed_script", "added_ts": "2025-01-01T00:00:00Z"}
+      }
+    ],
+    "grounded": true,
+    "confidence": 0.96,
+    "answer_draft": "Woh Leo hai, aapka pota! Woh 22 saal ka hai aur har Ravivar aapse milne aata hai."
+  },
+  "cached_tts_file": "fixtures/tts/hindi_leo_hi.mp3"
+}
