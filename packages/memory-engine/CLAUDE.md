@@ -75,8 +75,14 @@ LLM in voice agent uses ONLY facts in `items[]`. Never invents people/events/dat
 - Moss vars may appear as `MOSS_ID` / `MOSS_API_KEY` (legacy) — config.py aliases them to MOSS_PROJECT_ID / MOSS_PROJECT_KEY.
 - Always read from `root/.env` (not packages/memory-engine/.env — there isn't one).
 
+## Next steps for Track B
+1. Start server + run smoke test: `uvicorn app.main:app --reload --port 8000` then `pytest tests/smoke_test.py -s -v`
+2. Build `app/unsiloed.py` — upload PDF → extract structured data → `/memory/write` each entity. API details in STATUS.md. The intake flow: `POST /api/v1/playground/upload-document` (multipart, field `document`) → `document_id`; then `POST /api/v1/playground/chat-with-document` (**form data**, not JSON, fields `document_id` + `message`).
+3. A↔B integration: support Rushil wiring `memory_client.py` to the live server
+
 ## Open items
+- `unsiloed.py`: not yet built — API confirmed, see STATUS.md for call details
 - `vision.py`: needs OpenAI key or on-device VLM — fixture fallback fires for now
 - `capture.py`: explicit-trigger only — not live auto-capture
 - Twilio SMS: fires with current keys but location alert not tested end-to-end
-- TrueFoundry: key in `.env` but base_url unknown — not used by memory engine
+- TrueFoundry: key in `.env` but `TRUEFOUNDRY_BASE_URL` still unknown — not used by memory engine
