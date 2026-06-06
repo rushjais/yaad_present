@@ -32,10 +32,13 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 ## Language
 **English only.** Hindi / multilingual is a future add-on. `lang` param exists in the contract schema but is currently ignored — always English. No changes needed to wire it later.
 
-## [CONFIRM] open items (resolve at office hours)
-- **Moss**: ✅ confirmed — on-device SDK, SessionIndex, sub-10ms, instant upsert. Need MOSS_PROJECT_ID + MOSS_PROJECT_KEY from portal.getmoss.dev
-- **Supabase**: keys needed — SUPABASE_URL + SUPABASE_SERVICE_KEY (Track B seed + Track C)
-- **MiniMax**: English voice id, streaming TTS endpoint, group id (Track A)
-- **Deepgram / LiveKit / Pipecat**: exact streaming STT + partial-transcript events. Docs: https://docs.moss.dev/docs/integrations/pipecat and https://docs.moss.dev/docs/integrations/livekit (Track A)
-- **TrueFoundry**: base_url + model name (Track A)
-- **Twilio vs push**: for wander alerts (Track B location.py)
+## [CONFIRM] open items
+- **Moss**: ✅ CONFIRMED — SessionIndex connects, sub-10ms. Keys in .env.
+- **Supabase**: ✅ CONFIRMED — all 12 tables created, 0 rows (needs seed_amma.py).
+- **Groq**: ✅ CONFIRMED — 16 models, key works.
+- **MiniMax**: ✅ CONFIRMED — use `api.minimaxi.chat` (NOT api.minimax.chat). TTS works with `speech-02-hd` + `voice_id`. English voice: `Wise_Woman`. Audio confirmed 84KB for short text. config.py has `minimax_base_url` defaulting to correct endpoint.
+- **Twilio**: ✅ CONFIRMED — account active, SMS ready.
+- **TrueFoundry**: ❌ NEEDS base_url + model name. Key in .env (`default-aeeqzarfyu46mbck1y9iyyf7`) but workspace URL unknown — ask at office hours or from hackathon materials. Using Groq as primary LLM in the meantime.
+- **Unsiloed**: ❌ `api.unsiloed.ai` does not resolve. `app.unsiloed.ai` is the web UI (returns HTML). Need correct API base URL — check hackathon Slack / onboarding materials.
+- **Deepgram**: ❌ No key. Using Groq for STT (Track A).
+- **LiveKit/Pipecat**: Keys in .env, wss:// URL not HTTP-testable — will verify when voice agent starts.
