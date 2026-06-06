@@ -1,66 +1,68 @@
 """
-Moss client abstraction.
-[CONFIRM] at office hours: on-device/WASM vs cloud, exact SDK calls.
-Language: English only for now. Cross-lingual embeddings are a future add-on.
+Moss on-device SDK client.
+SDK: pip install moss  (https://docs.moss.dev/docs/reference/python/api)
+Auth: MossClient(MOSS_PROJECT_ID, MOSS_PROJECT_KEY) from the Moss portal.
 
-Current impl: REST API against MOSS_BASE_URL.
-If Moss provides a Python SDK, swap _request() for the SDK calls — interface stays the same.
+Architecture: SessionIndex wraps the persistent cloud index "yaad_amma".
+- session() auto-loads the cloud index on first call (Amma's seeded life)
+- add_docs: instant in-memory upsert, async push to cloud -> powers add-fact-live
+- query: in-memory, ~1-10ms (Moss sub-10ms guarantee)
 
-On-device mode: set MOSS_BASE_URL=http://localhost:7532 (WASM sidecar port — [CONFIRM]).
-Cloud mode: set MOSS_BASE_URL=https://api.getmoss.dev and MOSS_API_KEY.
+Pattern: https://docs.moss.dev/docs/build/live-call-context
 """
 from __future__ import annotations
 
-import time
+import asyncio
 from typing import Any
-
-import httpx
 
 from .config import settings
 
 
-class MossClient:
+class _MossWrapper:
+    """Thin wrapper around Moss SessionIndex."""
+
     def __init__(self) -> None:
-        self._base = settings.moss_base_url.rstrip("/")
-        self._key = settings.moss_api_key
-        self._index = settings.moss_index
+        self._client = None
+        self._session = None
+        self._lock = asyncio.Lock()
 
-    def _headers(self) -> dict:
-        h = {"Content-Type": "application/json"}
-        if self._key:
-            h["Authorization"] = f"Bearer {self._key}"
-        return h
-
-    async def _request(self, method: str, path: str, **kwargs) -> dict:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.request(
-                method,
-                f"{self._base}{path}",
-                headers=self._headers(),
-                **kwargs,
+    async def _ensure(self) -> Any:
+        if self._session is not None:
+            return self._session
+        async with self._lock:
+            if self._session is not None:
+                return self._session
+            from moss import MossClient
+            self._client = MossClient(
+                settings.moss_project_id,
+                settings.moss_project_key,
             )
-            resp.raise_for_status()
-            return resp.json()
-
-    # ------------------------------------------------------------------
-    # Core operations
-    # ------------------------------------------------------------------
+            # Resumes existing cloud index if it exists, else starts empty
+            self._session = await self._client.session(
+                index_name=settings.moss_index,
+            )
+        return self._session
 
     async def upsert(self, ref: str, text: str, metadata: dict[str, Any]) -> None:
-        """Index or update a single item. Instant — this is Moss's core value."""
-        await self._request(
-            "POST",
-            f"/indexes/{self._index}/upsert",
-            json={"id": ref, "text": text, "metadata": metadata},
+        """Instant in-memory upsert — no network call. Powers add-fact-live."""
+        from moss import DocumentInfo, MutationOptions
+        session = await self._ensure()
+        await session.add_docs(
+            [DocumentInfo(id=ref, text=text, metadata=metadata)],
+            MutationOptions(upsert=True),
         )
+        asyncio.create_task(self._push())
 
     async def upsert_batch(self, items: list[dict]) -> None:
         """Batch upsert for seeding. Each item: {id, text, metadata}."""
-        await self._request(
-            "POST",
-            f"/indexes/{self._index}/upsert_batch",
-            json={"items": items},
-        )
+        from moss import DocumentInfo, MutationOptions
+        session = await self._ensure()
+        docs = [
+            DocumentInfo(id=it["id"], text=it["text"], metadata=it.get("metadata", {}))
+            for it in items
+        ]
+        await session.add_docs(docs, MutationOptions(upsert=True))
+        asyncio.create_task(self._push())
 
     async def query(
         self,
@@ -70,48 +72,45 @@ class MossClient:
         filters: dict | None = None,
     ) -> list[dict]:
         """
-        Semantic search. Returns list of {id, text, score, metadata}.
-        English only for now. lang param reserved for future multilingual add-on.
+        In-memory semantic search. ~1-10ms.
+        lang param reserved for future multilingual add-on — currently ignored.
+        Returns list of {id, text, score, metadata}.
         """
-        body: dict[str, Any] = {
-            "query": text,
-            "top_k": top_k,
-            "lang": lang,
-        }
+        from moss import QueryOptions
+        session = await self._ensure()
+        opts = QueryOptions(top_k=top_k)
         if filters:
-            body["filters"] = filters
-        result = await self._request(
-            "POST",
-            f"/indexes/{self._index}/query",
-            json=body,
-        )
-        return result.get("results", [])
+            opts.filter = filters
+        result = await session.query(text, opts)
+        return [
+            {
+                "id": doc.id,
+                "text": doc.text or "",
+                "score": doc.score,
+                "metadata": doc.metadata or {},
+            }
+            for doc in result.docs
+        ]
 
-    async def delete(self, ref: str) -> None:
-        await self._request("DELETE", f"/indexes/{self._index}/items/{ref}")
+    async def _push(self) -> None:
+        try:
+            session = await self._ensure()
+            await session.push_index()
+        except Exception:
+            pass
 
     async def ping(self) -> bool:
         try:
-            t0 = time.perf_counter()
-            await self._request("GET", "/health")
-            ms = (time.perf_counter() - t0) * 1000
-            return ms < 500
+            from moss import QueryOptions
+            session = await self._ensure()
+            await session.query("ping", QueryOptions(top_k=1))
+            return True
         except Exception:
             return False
 
     async def create_index_if_needed(self) -> None:
-        """Create the index on first run. [CONFIRM] exact endpoint."""
-        try:
-            await self._request(
-                "POST",
-                "/indexes",
-                json={"name": self._index, "multilingual": True},
-            )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 409:
-                pass  # already exists
-            else:
-                raise
+        """session() handles index creation automatically."""
+        await self._ensure()
 
 
-moss = MossClient()
+moss = _MossWrapper()

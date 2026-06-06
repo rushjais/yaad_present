@@ -7,12 +7,13 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_key: str = ""
 
-    # [CONFIRM] on-device/WASM vs cloud + exact SDK
-    moss_api_key: str = ""
-    moss_base_url: str = "https://api.getmoss.dev"
+    # Moss — on-device SDK (pip install moss)
+    # Get PROJECT_ID and PROJECT_KEY from the Moss portal (portal.getmoss.dev)
+    moss_project_id: str = ""
+    moss_project_key: str = ""
     moss_index: str = "yaad_amma"
 
-    openai_api_key: str = ""  # used for embeddings fallback if Moss cloud needs it
+    openai_api_key: str = ""  # used for vision VLM (optional)
 
     confidence_threshold: float = 0.45  # τ — below this → safe refusal
 

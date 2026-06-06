@@ -11,7 +11,7 @@ B1 complete (db.py + moss_client.py). B2–B6 complete (graph, retrieval, ground
 | `app/main.py` | ✅ BUILT | FastAPI app. Fixture stubs on all endpoints; lazy-imports real modules. |
 | `app/config.py` | ✅ BUILT | Pydantic settings from .env. Scoring weights, confidence threshold τ. |
 | `app/db.py` | ✅ BUILT | Supabase client: write_memory, fetch helpers, db_ping. |
-| `app/moss_client.py` | ✅ BUILT [CONFIRM] | Moss HTTP client: upsert, upsert_batch, query, ping. Swap for SDK if provided. |
+| `app/moss_client.py` | ✅ BUILT | Moss SDK: SessionIndex, instant upsert, sub-10ms query, async push to cloud. |
 | `app/graph.py` | ✅ BUILT | 1-hop entity/episode/edge traversal from Supabase edges table. |
 | `app/retrieval.py` | ✅ BUILT | Composed scoring: α·sem + β·recency + γ·salience + δ·graph_prox. |
 | `app/grounding.py` | ✅ BUILT | Confidence gate τ → safe refusal. Provenance on every item. Anti-confabulation. |
@@ -46,10 +46,16 @@ curl http://localhost:8000/health
 curl -X POST http://localhost:8000/memory/query -H 'Content-Type: application/json' -d '{"text":"Who is Leo?","lang":"en"}'
 ```
 
-## [CONFIRM] open items (needed at office hours)
-- **Moss SDK**: on-device/WASM vs cloud, exact Python SDK calls vs REST, instant upsert latency. `moss_client.py` currently uses REST — swap if SDK provided.
-- **Moss wifi-off mode**: WASM sidecar port? Or bundle index locally? Affects demo beat 4 (wifi-off).
-- **Vision**: on-device embedding (CLIP?) vs hosted VLM. Currently uses OpenAI gpt-4o-mini as fallback.
+## Moss — confirmed and wired
+- **SDK**: `pip install moss`, `from moss import MossClient, SessionIndex`
+- **Auth**: `MossClient(MOSS_PROJECT_ID, MOSS_PROJECT_KEY)` — get both from portal.getmoss.dev
+- **On-device**: SessionIndex runs in-process via Rust core, no sidecar needed
+- **Latency**: sub-10ms queries, instant upserts (local, no network call per op)
+- **wifi-off beat**: works natively — SessionIndex stays in-memory; load before demo, then wifi can drop
+
+## [CONFIRM] remaining open items
+- **Supabase**: need SUPABASE_URL + SUPABASE_SERVICE_KEY to run seed_amma.py
+- **Vision**: on-device embedding vs hosted VLM — currently using OpenAI gpt-4o-mini as fallback
 
 ## Language
 **English only for now.** The `lang` param is accepted by all endpoints but ignored — always English.

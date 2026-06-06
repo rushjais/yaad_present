@@ -13,10 +13,10 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - Memory engine stubs ready at :8000 — safe to code memory_client.py against now.
 
 ### Track B — Memory (Rushil)
-- Phase: B0–B6 complete (Gate 0 through eval harness)
-- Done: schemas.py, main.py (fixture stubs), config.py, db.py, moss_client.py, graph.py, retrieval.py, grounding.py, temporal.py, capture.py, reminders.py, location.py, vision.py, smoke_test.py, seed_amma.py, fixtures/*, docker-compose.yml, .env.example, CONTRACT.md frozen, package CLAUDE.md for all 3 tracks
-- Blocked: Moss [CONFIRM] — moss_client.py uses REST; swap for SDK at office hours. Real retrieval won't work until Moss keys are set.
-- Next: confirm Moss SDK → wire real retrieval → run seed_amma.py → run smoke_test.py
+- Phase: B0–B6 complete + Moss SDK wired
+- Done: all modules built; moss_client.py now uses real SDK (SessionIndex, sub-10ms, instant upsert)
+- Blocked: needs MOSS_PROJECT_ID + MOSS_PROJECT_KEY (from portal.getmoss.dev) + Supabase keys to run seed_amma.py
+- Next: get keys → pip install moss → seed_amma.py → smoke_test.py → Gate 1
 
 ### Track C — Caregiver Web (Raghav)
 - Phase: not started · Done: — · Blocked: waiting on Supabase keys
@@ -33,10 +33,9 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 **English only.** Hindi / multilingual is a future add-on. `lang` param exists in the contract schema but is currently ignored — always English. No changes needed to wire it later.
 
 ## [CONFIRM] open items (resolve at office hours)
-- **Moss**: on-device/WASM vs cloud, exact SDK calls (moss_client.py built for REST), instant-upsert latency target
+- **Moss**: ✅ confirmed — on-device SDK, SessionIndex, sub-10ms, instant upsert. Need MOSS_PROJECT_ID + MOSS_PROJECT_KEY from portal.getmoss.dev
+- **Supabase**: keys needed — SUPABASE_URL + SUPABASE_SERVICE_KEY (Track B seed + Track C)
 - **MiniMax**: English voice id, streaming TTS endpoint, group id (Track A)
-- **Deepgram / LiveKit / Pipecat**: exact streaming STT call + partial-transcript events (Track A)
+- **Deepgram / LiveKit / Pipecat**: exact streaming STT + partial-transcript events. Docs: https://docs.moss.dev/docs/integrations/pipecat and https://docs.moss.dev/docs/integrations/livekit (Track A)
 - **TrueFoundry**: base_url + model name (Track A)
-- **Supabase**: keys needed to run seed_amma.py and enable real retrieval (Track B + C)
-- **Unsiloed**: parse API for document ingestion (Track C stretch)
 - **Twilio vs push**: for wander alerts (Track B location.py)
