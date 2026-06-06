@@ -47,10 +47,10 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - Still needs: TrueFoundry base_url [CONFIRM] (unused by memory engine; tracked here for visibility)
 
 ### Track C — Caregiver Web (Raghav)
-- Phase: C0 — ready to start
-- Done: Supabase tables created, seeded with Amma's life. OpenAPI + CLAUDE.md ready.
-- **Start here:** get `.env` from Keshav (SUPABASE_URL + SUPABASE_SERVICE_KEY), generate types.ts, scaffold Next.js
-- Do NOT re-run seed_amma.py — data is already there
+- Phase: C1 — in progress
+- Done: C0 complete — Next.js 15 scaffold, lib/types.ts (from contract), lib/api.ts (all 8 endpoints), page stubs for /, /memories, /timeline, /graph, /safety. Build green, tsc clean.
+- Next: C1 add-memory forms (person / event / medication / story → POST /memory/write) — this is the add-fact-live beat
+- Do NOT re-run seed_amma.py — data is already in Supabase
 
 ## API keys status
 | Service | Status | Notes |
