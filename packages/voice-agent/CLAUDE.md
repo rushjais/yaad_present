@@ -3,22 +3,23 @@
 
 ---
 
-## Current state (updated 2026-06-06, session 1)
-- Phase: **A1 in progress** — pipeline scaffold built, Groq Whisper STT wired, MiniMax TTS not yet validated.
-- Built: `agent.py`, `transports.py`, `stt_groq.py`, `tts_minimax.py`, `llm.py`, `memory_client.py`, `fallback.py`, `reminders_client.py`, `test_stt_tts.py`.
-- Keys confirmed: `GROQ_API_KEY`, `MINIMAX_API_KEY`, `MINIMAX_GROUP_ID` in `.env`.
-- **Immediate blocker:** run `python -m app.test_stt_tts` to confirm Groq STT + MiniMax TTS work end-to-end.
+## Current state (updated 2026-06-06, session 2)
+- Phase: **A1 complete / A2 blocked on LLM key**
+- **Groq STT: ✅ validated** — "Who is this person?" → exact transcript, 0.46s, English detected
+- **MiniMax TTS: ✗ key invalid** (status_code=2049). Response format confirmed and decoder fixed. Need fresh key.
+- **LLM: no key set** — `create_llm()` will raise on startup. Set any one of: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or TrueFoundry vars.
+- **ffmpeg: ✅ installed** (v8.1.1)
+- Pipeline integrates LLM directly (no pipecat LLM service — avoids version import issues)
 
 ## Language scope
-**English only.** Drop all Hindi/multilingual logic. The `lang` field exists in the contract but memory engine always returns English — pass `"lang": "en"` on every call. Hindi can be added later without contract changes.
+**English only.** Always pass `"lang": "en"`. Hindi deferred.
 
-## What Track B has ready for you (all endpoints live on :8000)
-- `GET  /health` — confirms memory-engine is up
+## What Track B has ready (all endpoints live on :8000)
 - `POST /memory/query   {text, lang:"en"}` → `{items, grounded, confidence, answer_draft}`
-- `POST /memory/temporal {text, lang:"en"}` → same shape — use for "pills today" / "is X coming"
+- `POST /memory/temporal {text, lang:"en"}` → same shape
 - `POST /memory/write   {type, payload}` → `{id}`
 - `GET  /reminders/due` → `{due:[{kind, text, ref}]}`
-- All return fixture payloads until Moss/Supabase keys are set and `seed_amma.py` is run — safe to code against now.
+- All return fixture payloads until Moss/Supabase keys are set.
 
 ## Grounding system prompt (frozen — use verbatim)
 ```
@@ -32,80 +33,79 @@ Short, calm, warm. English only.
 ## File responsibilities
 | File | Does |
 |---|---|
-| `app/agent.py` | Pipeline assembly + entry point (`python -m app.agent`) |
-| `app/transports.py` | LiveKit transport + Silero VAD — token generation |
-| `app/stt_groq.py` | **Active STT** — Groq Whisper, buffers utterance, auto-detects lang |
-| `app/stt_deepgram.py` | Kept as reference; not imported by agent.py |
-| `app/test_stt_tts.py` | Standalone smoke test: mic/WAV → Groq STT → MiniMax TTS |
-| `app/tts_minimax.py` | MiniMax TTS FrameProcessor — HTTP call, MP3→PCM |
-| `app/llm.py` | OpenAILLMService pointed at TrueFoundry gateway |
-| `app/memory_client.py` | Async HTTP client → `/memory/query` + `/memory/temporal` |
-| `app/fallback.py` | 5-beat fixture responses for demo resilience (§13) |
+| `app/agent.py` | Pipeline + entry point (`python -m app.agent`). LLM integrated into `MemoryContextProcessor`. |
+| `app/transports.py` | LiveKit transport + Silero VAD |
+| `app/stt_groq.py` | ✅ Groq Whisper STT — buffers utterance, times STT, emits TranscriptionFrame |
+| `app/stt_deepgram.py` | Kept as reference; not used |
+| `app/tts_minimax.py` | MiniMax TTS — hex-decode confirmed, times TTS, logs latency line |
+| `app/llm.py` | LLM factory: TrueFoundry → OpenAI → Anthropic, raises if none configured |
+| `app/memory_client.py` | HTTP client → `/memory/query` + `/memory/temporal` |
+| `app/fallback.py` | 5-beat fixture responses for demo resilience |
 | `app/reminders_client.py` | Background poller for `/reminders/due` (A5) |
+| `app/validate_stt_tts.py` | Programmatic validation: macOS say → Groq STT + MiniMax TTS probe (no mic) |
+| `app/test_stt_tts.py` | Mic-based or WAV-file STT+TTS test |
 
 ## Pipeline flow
 ```
 LiveKit audio in
   → Silero VAD (barge-in: StartInterruptionFrame cancels TTS)
-  → Groq Whisper STT (buffers utterance → transcribes)
-  → MemoryContextProcessor  ← /memory/query or /memory/temporal (3s timeout → fixture)
-  → TrueFoundry LLM         ← grounding system prompt
-  → SentenceAggregator      ← buffers streaming text into sentences
-  → MiniMax TTS             ← English, MP3→PCM
+  → Groq Whisper STT (buffers utterance → transcribes, logs STT time)
+  → MemoryContextProcessor (memory query "en" + LLM streaming → TextFrame, logs memory+LLM time)
+  → SentenceAggregator (buffers into sentences)
+  → MiniMax TTS (logs TTS time + full [LATENCY] line)
   → LiveKit audio out
 ```
 
-## How to validate before wiring the full pipeline
-```bash
-cd packages/voice-agent
-pip install -r requirements.txt
-brew install ffmpeg
-# then run the smoke test:
-python -m app.test_stt_tts           # records 5s from mic
-python -m app.test_stt_tts file.wav  # or pass a WAV
+Latency log format (per turn):
 ```
-Expected: transcript printed, MiniMax speaks it back. If you see "No audio in MiniMax response" — print the full response dict and fix the field name in `tts_minimax.py:62` + `test_stt_tts.py:100`.
+[LATENCY] STT 0.46s | memory 0.05s | LLM 0.60s | TTS 0.50s | total 1.61s
+```
 
-## memory_client.py — use this pattern (already in app/memory_client.py)
+## LLM auto-detection (llm.py)
+```
+1. TRUEFOUNDRY_BASE_URL + TRUEFOUNDRY_API_KEY + TRUEFOUNDRY_MODEL → TrueFoundry
+2. OPENAI_API_KEY                                                   → gpt-4o
+3. ANTHROPIC_API_KEY                                                → claude-haiku-4-5-20251001
+4. none                                                             → RuntimeError with clear message
+```
+
+## MiniMax TTS confirmed response format
 ```python
-import httpx, os
-BASE = os.getenv("MEMORY_ENGINE_URL", "http://localhost:8000")
+# Confirmed via API probe 2026-06-06 (status_code=2049 but response shape verified)
+data["data"]["audio"]  # hex-encoded MP3 string  ← NOT base64, NOT audio_file
+mp3_bytes = bytes.fromhex(data["data"]["audio"])
+```
+**Key issue:** current `MINIMAX_API_KEY` is invalid for T2A endpoint (status_code=2049).
+→ Get fresh key from portal.minimax.chat and update `.env`.
 
-async def query(text: str) -> dict:
-    async with httpx.AsyncClient() as c:
-        r = await c.post(f"{BASE}/memory/query", json={"text": text, "lang": "en"}, timeout=3.0)
-        return r.json()
+## How to validate
+```bash
+# Validate Groq STT + MiniMax probe (no mic):
+python -m app.validate_stt_tts
+
+# Mic test when you have audio input:
+python -m app.test_stt_tts
+python -m app.test_stt_tts path/to/file.wav
 ```
 
-## Fixture fallback contract (fallback.py)
-If any memory/TTS call times out (3s) → serve `fixtures/<beat>.json` answer_draft + cached TTS.
-Beat → fixture map:
-- who-is-this → `fixtures/who_is_leo.json`
-- pills-today → `fixtures/pills_today.json`
-- add-fact-live → `fixtures/add_fact_live.json`
-- wifi-off → `fixtures/wifi_off.json`
-
-## Next steps (in order)
-1. ✅ Scaffold `agent.py` + STT + TTS + `memory_client.py` (A0–A1)
-2. **Now:** run `test_stt_tts.py` → confirm Groq STT + MiniMax TTS round-trip (A1 blocker)
-3. **[CONFIRM]** LiveKit / Pipecat exact transport + VAD setup; pipecat version import paths
-4. **[CONFIRM]** TrueFoundry base_url + model name
-5. **[CONFIRM]** MiniMax English voice id — validate with `test_stt_tts.py`
-6. Plug in real `/memory/query` + grounding prompt + barge-in (A2)
-7. Latency pass: speculative fire on partial transcript → <~1s (A3)
-8. `fallback.py`: 3s timeout → fixture + cached TTS (A4) — cache TTS clips for wifi-off beat
-9. Reminders: scheduler polls `/reminders/due` → proactive TTS (A5)
+## Next steps
+1. ✅ Groq STT validated
+2. ✅ MiniMax response format confirmed; decoder fixed
+3. **Now:** get a valid LLM key → `python -m app.agent` should start cleanly
+4. **Now:** get valid MiniMax TTS key → re-run `validate_stt_tts.py` for full round-trip
+5. A3 latency pass once A2 is running
+6. A4: cache TTS clips for wifi-off beat
+7. A5: wire reminders into pipeline output
 
 ## [CONFIRM] open items
-- **MiniMax:** audio response field (`audio_file` vs `data.audio`), English voice id — surface by running `test_stt_tts.py`
-- **LiveKit / Pipecat:** installed version → verify import paths; VAD frame names (`UserStartedSpeakingFrame` / `UserStoppedSpeakingFrame`)
-- **TrueFoundry:** `TRUEFOUNDRY_BASE_URL` + model name
-- **pydub + ffmpeg:** confirm available on demo machine
+- **MiniMax:** need fresh API key (current invalid). Voice ID `Calm_Woman` assumed — confirm with working key.
+- **LLM:** set any one key (see LLM auto-detection above)
+- **LiveKit / Pipecat:** import paths; VAD frame names — pending full pipeline run
+- **Groq STT:** ✅ confirmed
 
 ## Faked / TODO real
-- MiniMax TTS: not tested end-to-end yet
-- TrueFoundry LLM: not tested yet
-- LiveKit transport: not tested yet
-- Hindi/multilingual code in `tts_minimax.py` + `fallback.py`: present but unused (English only for now)
-- `reminders_client.py`: wired but not integrated into pipeline output yet (A5)
-- `SentenceAggregator`: local implementation — swap for pipecat built-in if version supports it
+- MiniMax TTS: key invalid — decoder fixed, pending valid key
+- TrueFoundry: not configured — LLM falls back to OpenAI/Anthropic if those keys are set
+- LiveKit transport: not tested (requires room + keys)
+- `SentenceAggregator`: local impl — swap for pipecat built-in if version supports it
+- Reminders: poller wired but not integrated into pipeline speech output yet (A5)

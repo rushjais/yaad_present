@@ -1,23 +1,26 @@
-"""MiniMax TTS service — bilingual Hindi/English.
+"""MiniMax TTS service — English (Hindi suppressed until key confirmed).
 
-[CONFIRM] at sponsor table:
-- Exact endpoint URL (currently: https://api.minimax.chat/v1/t2a_v2)
-- Hindi voice_id (e.g. 'female-shaonv' or locale-specific id)
-- English voice_id (e.g. 'male-qn-jingying' or locale-specific id)
-- Response field name for audio ('audio_file' vs 'data.audio')
-- Whether streaming endpoint exists (would reduce latency further)
-- Model name ('speech-01-hd' vs 'speech-01-turbo')
+Confirmed response shape (from probe 2026-06-06):
+  POST https://api.minimax.chat/v1/t2a_v2?GroupId={GID}
+  Response JSON: { "data": { "audio": "<hex_string>", "status": 2 },
+                   "base_resp": { "status_code": 0, "status_msg": "success" },
+                   "trace_id": "...", ... }
+  Audio field:  data["data"]["audio"]  — hex-encoded MP3 bytes (NOT base64).
+
+[CONFIRM] still open:
+- Valid API key: current key returns status_code=2049 (invalid api key).
+  Need a fresh MiniMax TTS key from portal.minimax.chat or sponsor table.
+- English voice_id — default 'Calm_Woman' based on MiniMax public docs;
+  confirm against available voices for the provisioned account.
 """
 
-import asyncio
-import base64
 import io
 import logging
 import os
-from typing import AsyncGenerator
+import time
 
 import httpx
-from pydub import AudioSegment  # requires ffmpeg installed
+from pydub import AudioSegment  # requires: brew install ffmpeg
 
 # [CONFIRM] pipecat import paths
 from pipecat.frames.frames import (  # type: ignore
@@ -27,22 +30,16 @@ from pipecat.frames.frames import (  # type: ignore
     TTSStartedFrame,
     TTSStoppedFrame,
 )
-from pipecat.processors.frame_processor import FrameProcessor, FrameDirection  # type: ignore
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # type: ignore
 
 logger = logging.getLogger(__name__)
 
-# [CONFIRM] these env values at sponsor table
-MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
-MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "")
-MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "male-qn-jingying")   # [CONFIRM]
-MINIMAX_VOICE_HI = os.environ.get("MINIMAX_VOICE_HI", "female-shaonv")      # [CONFIRM]
-MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd")             # [CONFIRM]
-MINIMAX_URL = "https://api.minimax.chat/v1/t2a_v2"                          # [CONFIRM]
-OUTPUT_SAMPLE_RATE = 24000
-
-
-def _contains_hindi(text: str) -> bool:
-    return any(0x0900 <= ord(c) <= 0x097F for c in text)
+MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
+MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "").strip()
+MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "Calm_Woman").strip()  # [CONFIRM]
+MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd").strip()
+MINIMAX_URL = "https://api.minimax.chat/v1/t2a_v2"
+OUTPUT_SAMPLE_RATE = 32000
 
 
 def _mp3_to_pcm(mp3_bytes: bytes) -> bytes:
@@ -52,11 +49,9 @@ def _mp3_to_pcm(mp3_bytes: bytes) -> bytes:
 
 
 class MiniMaxTTSService(FrameProcessor):
-    """Converts TextFrame → PCM AudioRawFrame via MiniMax TTS API.
-
-    Sits after the LLM in the pipeline. Expects individual sentence-level
-    TextFrames (use a SentenceAggregator upstream if needed).
-    """
+    def __init__(self, tracker=None) -> None:
+        super().__init__()
+        self._tracker = tracker
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -66,8 +61,12 @@ class MiniMaxTTSService(FrameProcessor):
             return
 
         await self.push_frame(TTSStartedFrame())
+        t0 = time.perf_counter()
         try:
             pcm = await self._synthesize(frame.text)
+            if self._tracker:
+                self._tracker.tts = time.perf_counter() - t0
+                self._tracker.log()
             await self.push_frame(AudioRawFrame(audio=pcm, sample_rate=OUTPUT_SAMPLE_RATE, num_channels=1))
         except Exception as e:
             logger.error("MiniMax TTS error: %s", e)
@@ -75,14 +74,19 @@ class MiniMaxTTSService(FrameProcessor):
             await self.push_frame(TTSStoppedFrame())
 
     async def _synthesize(self, text: str) -> bytes:
-        voice_id = MINIMAX_VOICE_HI if _contains_hindi(text) else MINIMAX_VOICE_EN
         payload = {
             "model": MINIMAX_MODEL,
             "text": text,
-            "voice_setting": {"voice_id": voice_id, "speed": 1.0, "vol": 1.0},
-            "audio_setting": {"sample_rate": OUTPUT_SAMPLE_RATE, "format": "mp3"},  # [CONFIRM] format
+            "stream": False,
+            "voice_setting": {"voice_id": MINIMAX_VOICE_EN, "speed": 1, "vol": 1, "pitch": 0},
+            "audio_setting": {
+                "sample_rate": OUTPUT_SAMPLE_RATE,
+                "bitrate": 128000,
+                "format": "mp3",
+                "channel": 1,
+            },
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(
                 f"{MINIMAX_URL}?GroupId={MINIMAX_GROUP_ID}",
                 headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
@@ -91,8 +95,12 @@ class MiniMaxTTSService(FrameProcessor):
             r.raise_for_status()
             data = r.json()
 
-        # [CONFIRM] response field — may be 'audio_file', 'data', or nested
-        mp3_b64 = data.get("audio_file") or data.get("data", {}).get("audio", "")
-        if not mp3_b64:
-            raise ValueError(f"No audio in MiniMax response: {list(data.keys())}")
-        return _mp3_to_pcm(base64.b64decode(mp3_b64))
+        base = data.get("base_resp", {})
+        if base.get("status_code") != 0:
+            raise ValueError(f"MiniMax error {base.get('status_code')}: {base.get('status_msg')}")
+
+        # Confirmed field: data["data"]["audio"] — hex-encoded MP3
+        audio_hex = (data.get("data") or {}).get("audio", "")
+        if not audio_hex:
+            raise ValueError(f"No audio in MiniMax response. Keys: {list(data.keys())}")
+        return _mp3_to_pcm(bytes.fromhex(audio_hex))

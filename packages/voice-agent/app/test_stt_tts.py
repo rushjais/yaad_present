@@ -131,41 +131,39 @@ def _contains_hindi(text: str) -> bool:
 
 
 async def synthesize(text: str) -> bytes:
-    """Return MP3 bytes from MiniMax TTS."""
-    voice_id = MINIMAX_VOICE_HI if _contains_hindi(text) else MINIMAX_VOICE_EN
-    print(f"  MiniMax voice: {voice_id} ({'Hindi' if voice_id == MINIMAX_VOICE_HI else 'English'})")
+    """Return MP3 bytes from MiniMax TTS.
 
+    Confirmed response shape (probed 2026-06-06):
+      data["data"]["audio"] — hex-encoded MP3 (NOT base64).
+    Needs a valid TTS key — current key returns status_code=2049.
+    """
+    print(f"  MiniMax voice: {MINIMAX_VOICE_EN!r}")
     payload = {
         "model": MINIMAX_MODEL,
         "text": text,
-        "voice_setting": {"voice_id": voice_id, "speed": 1.0, "vol": 1.0},
-        "audio_setting": {"sample_rate": 24000, "format": "mp3"},  # [CONFIRM] format
+        "stream": False,
+        "voice_setting": {"voice_id": MINIMAX_VOICE_EN, "speed": 1, "vol": 1, "pitch": 0},
+        "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1},
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.post(
             f"{MINIMAX_URL}?GroupId={MINIMAX_GROUP_ID}",
-            headers={
-                "Authorization": f"Bearer {MINIMAX_API_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
             json=payload,
         )
         r.raise_for_status()
         data = r.json()
 
-    # [CONFIRM] response field — MiniMax may use 'audio_file' or nested 'data.audio'
-    b64 = (
-        data.get("audio_file")
-        or (data.get("data") or {}).get("audio")
-        or ""
-    )
-    if not b64:
+    base = data.get("base_resp", {})
+    if base.get("status_code") != 0:
         raise ValueError(
-            f"No audio in MiniMax response.\n"
-            f"Keys: {list(data.keys())}\n"
-            f"Full response: {data}"
+            f"MiniMax error {base.get('status_code')}: {base.get('status_msg')}\n"
+            f"Response keys: {list(data.keys())}"
         )
-    return base64.b64decode(b64)
+    audio_hex = (data.get("data") or {}).get("audio", "")
+    if not audio_hex:
+        raise ValueError(f"No audio field. Response keys: {list(data.keys())}")
+    return bytes.fromhex(audio_hex)
 
 
 # ---------------------------------------------------------------------------

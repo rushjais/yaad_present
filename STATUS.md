@@ -9,9 +9,16 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 ## Tracks
 
 ### Track A — Voice (Rushil)
-- Phase: **A1 in progress** · Done: full pipeline scaffold (`agent.py`, `transports.py`, `stt_groq.py`, `tts_minimax.py`, `llm.py`, `memory_client.py`, `fallback.py`), **STT switched Deepgram → Groq Whisper** (Deepgram not working; Groq key confirmed), standalone `test_stt_tts.py`.
-- Blocked: MiniMax response field [CONFIRM] (`audio_file` vs `data.audio`) — run `python -m app.test_stt_tts` to surface. LiveKit + TrueFoundry not yet tested.
-- Next: run echo test → confirm MiniMax audio shape → A2 wire full pipeline → A3 latency pass.
+- Phase: **A1 complete / A2 blocked on LLM key**
+- Done: pipeline scaffold, Groq STT validated ✅, MiniMax response format confirmed (need fresh key), LLM provider auto-detection (TrueFoundry → OpenAI → Anthropic), latency logging per turn.
+- **Validated this session:**
+  - Groq STT English: ✅ "Who is this person?" → exact transcript, **0.46s**
+  - Groq STT Hindi: ⚠️ needs Devanagari input — romanized text misidentified as Spanish (not blocking; English-only for now)
+  - MiniMax TTS: ✗ `status_code=2049` (invalid API key). **Need fresh key from portal.minimax.chat.** Response format confirmed: `data["data"]["audio"]` — hex-encoded MP3.
+  - ffmpeg: ✅ v8.1.1 installed
+- **Blocker for A2:** need one LLM key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY` or TrueFoundry vars). Current `.env` has none configured.
+- **Blocker for MiniMax TTS:** fresh API key needed (current key is invalid for T2A endpoint).
+- Next: get LLM key → test full pipeline without LiveKit (agent.py with mocked transport) → get valid MiniMax key → A3 latency pass.
 
 ### Track B — Memory (Keshav)
 - Phase: **B0–B6 complete + Moss SDK wired**
@@ -29,17 +36,17 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - Twilio SMS in `location.py` won't fire without real keys.
 - `capture.py` is explicit-trigger only ("remember this…") — not live auto-capture.
 - `fixtures/tts/*.mp3` not yet generated — needed for wifi-off beat (voice agent caches TTS clips).
-- **voice-agent MiniMax TTS:** not yet validated end-to-end — run `test_stt_tts.py` first.
+- **MiniMax TTS:** key invalid (status 2049). Response format known; decoder fixed (hex not base64). Working pending new key.
+- **LLM:** no key configured — pipeline will raise on startup until one is set.
 
 ## Language
-**English only.** Hindi / multilingual is a future add-on. `lang` param exists in the contract schema but is currently ignored — always pass `"en"`. No contract changes needed to add it later.
+**English only.** `lang` param exists in contract but always pass `"en"`. Hindi add-on later.
 
 ## [CONFIRM] open items
-- **Moss:** ✅ confirmed — on-device SDK, SessionIndex, sub-10ms, instant upsert. Need `MOSS_PROJECT_ID` + `MOSS_PROJECT_KEY` from portal.getmoss.dev.
-- **Supabase:** keys needed — `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (Track B seed + Track C).
-- **MiniMax (A):** audio response field (`audio_file` vs `data.audio`) — run `test_stt_tts.py` to surface. English voice id + group id (group id confirmed in `.env`).
-- **LiveKit / Pipecat (A):** exact pipecat version → verify import paths; VAD frame names (`UserStartedSpeakingFrame` / `UserStoppedSpeakingFrame`); livekit-api token generation import.
-- **TrueFoundry (A):** `TRUEFOUNDRY_BASE_URL` + model name.
-- **Groq (A):** ✅ confirmed working. ~~Deepgram~~ dropped.
+- **Moss:** ✅ on-device SDK confirmed (sub-10ms). Need `MOSS_PROJECT_ID` + `MOSS_PROJECT_KEY`.
+- **Supabase:** keys needed — `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`.
+- **MiniMax TTS (A):** ✗ current key invalid (status 2049). Get fresh key from portal.minimax.chat. Response format confirmed: `data["data"]["audio"]` (hex MP3). Voice ID to validate with working key.
+- **LLM (A):** set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or TrueFoundry vars. Any one unblocks the pipeline.
+- **LiveKit / Pipecat (A):** import paths; VAD frame names — confirm when running full pipeline.
+- **Groq STT (A):** ✅ confirmed working (English 0.46s). Hindi needs Devanagari text when re-enabled.
 - **Twilio vs push:** for wander alerts (`location.py`).
-- **Pipecat `TextFrame` type (A):** confirm `OpenAILLMService` emits standard `TextFrame` so `SentenceAggregator` + `MiniMaxTTSService` catch it correctly.

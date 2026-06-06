@@ -17,7 +17,9 @@ import asyncio
 import io
 import logging
 import os
+import time
 import wave
+from typing import TYPE_CHECKING
 
 from groq import AsyncGroq
 
@@ -30,6 +32,9 @@ from pipecat.frames.frames import (  # type: ignore
     UserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # type: ignore
+
+if TYPE_CHECKING:
+    from .agent import LatencyTracker
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +58,15 @@ class GroqWhisperSTTService(FrameProcessor):
     MemoryContextProcessor for lang-aware memory queries).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, tracker=None) -> None:
         super().__init__()
         self._client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"].strip())
         self._buffer: bytearray = bytearray()
         self._buffering: bool = False
         self._sample_rate: int = 16000
         self._task: asyncio.Task | None = None
+        self._tracker = tracker
+        self._speech_start: float = 0.0
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -70,6 +77,7 @@ class GroqWhisperSTTService(FrameProcessor):
                 self._task.cancel()
             self._buffer = bytearray()
             self._buffering = True
+            self._speech_start = time.perf_counter()
             await self.push_frame(frame, direction)
 
         elif isinstance(frame, AudioRawFrame) and self._buffering:
@@ -87,12 +95,16 @@ class GroqWhisperSTTService(FrameProcessor):
 
     async def _transcribe(self, pcm: bytes) -> None:
         wav = _pcm_to_wav(pcm, self._sample_rate)
+        t0 = time.perf_counter()
         try:
             result = await self._client.audio.transcriptions.create(
                 file=("audio.wav", wav, "audio/wav"),
                 model=GROQ_MODEL,
                 response_format="verbose_json",  # returns detected language
             )
+            if self._tracker:
+                self._tracker.stt = time.perf_counter() - t0
+
             text = (result.text or "").strip()
             if not text:
                 return
@@ -100,7 +112,6 @@ class GroqWhisperSTTService(FrameProcessor):
             logger.info("Groq [%s]: %s", lang, text)
 
             # [CONFIRM] TranscriptionFrame signature varies by pipecat version.
-            # Try 4-arg form (text, user_id, timestamp, language), fall back to 3-arg.
             try:
                 frame = TranscriptionFrame(text, "", "0", language=lang)
             except TypeError:
@@ -113,5 +124,5 @@ class GroqWhisperSTTService(FrameProcessor):
             logger.error("Groq STT error: %s", e)
 
 
-def create_stt() -> GroqWhisperSTTService:
-    return GroqWhisperSTTService()
+def create_stt(tracker=None) -> "GroqWhisperSTTService":
+    return GroqWhisperSTTService(tracker=tracker)
