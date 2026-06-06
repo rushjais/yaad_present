@@ -1,0 +1,593 @@
+openapi: 3.1.0
+info:
+  title: Yaad Memory Engine
+  description: 'Episodic, temporal, grounded memory graph on Moss (Gate 0: fixture
+    stubs).'
+  version: 0.1.0-gate0
+paths:
+  /memory/query:
+    post:
+      summary: Memory Query
+      description: 'Grounded graph retrieval (⭐1/⭐2/⭐4). Stub: returns the ''who is
+        Leo'' fixture.'
+      operationId: memory_query_memory_query_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /memory/temporal:
+    post:
+      summary: Memory Temporal
+      description: 'Time-routed retrieval (⭐3 ''pills today''). Stub: returns the
+        temporal fixture.'
+      operationId: memory_temporal_memory_temporal_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemporalRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /memory/write:
+    post:
+      summary: Memory Write
+      description: 'Write a fact to Supabase + instant Moss upsert (⭐5 add-fact-live).
+        Stub: canned id.'
+      operationId: memory_write_memory_write_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WriteRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /memory/capture:
+    post:
+      summary: Memory Capture
+      description: 'Autonomous-ish capture from a transcript (§10). Stub: canned created_refs.'
+      operationId: memory_capture_memory_capture_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /memory/timeline:
+    get:
+      summary: Memory Timeline
+      description: 'Day reconstruction into ordered blocks. Stub: a sample day.'
+      operationId: memory_timeline_memory_timeline_get
+      parameters:
+      - name: date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /reminders/due:
+    get:
+      summary: Reminders Due
+      description: 'Due meds/events for proactive reminders (§12). Stub: pill + Sarah''s
+        visit.'
+      operationId: reminders_due_reminders_due_get
+      parameters:
+      - name: ts
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ts
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemindersResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /location/ping:
+    post:
+      summary: Location Ping
+      description: 'Wander-safety decision: none|reassure|alert (§8). Stub: reassure
+        near the park.'
+      operationId: location_ping_location_ping_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationPingRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationPingResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /vision/recognize:
+    post:
+      summary: Vision Recognize
+      description: 'Single-shot face match against pre-registered people (§11). Stub:
+        matches Leo.'
+      operationId: vision_recognize_vision_recognize_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VisionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health:
+    get:
+      summary: Health
+      description: 'Liveness for fixture-fallback decisions (§13). Stub: all green,
+        fast.'
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    CaptureRequest:
+      properties:
+        transcript:
+          type: string
+          title: Transcript
+      type: object
+      required:
+      - transcript
+      title: CaptureRequest
+    CaptureResponse:
+      properties:
+        created_refs:
+          items:
+            type: string
+          type: array
+          title: Created Refs
+      type: object
+      title: CaptureResponse
+    DueReminder:
+      properties:
+        type:
+          type: string
+          enum:
+          - medication
+          - event
+          title: Type
+        ref:
+          type: string
+          title: Ref
+          description: id of the medication or event
+        text:
+          type: string
+          title: Text
+          description: warm, speakable reminder line
+        due_ts:
+          type: string
+          format: date-time
+          title: Due Ts
+      type: object
+      required:
+      - type
+      - ref
+      - text
+      - due_ts
+      title: DueReminder
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        moss_ok:
+          type: boolean
+          title: Moss Ok
+        db_ok:
+          type: boolean
+          title: Db Ok
+        latency_ms:
+          type: number
+          title: Latency Ms
+      type: object
+      required:
+      - moss_ok
+      - db_ok
+      - latency_ms
+      title: HealthResponse
+    LocationPingRequest:
+      properties:
+        lat:
+          type: number
+          title: Lat
+        lng:
+          type: number
+          title: Lng
+      type: object
+      required:
+      - lat
+      - lng
+      title: LocationPingRequest
+    LocationPingResponse:
+      properties:
+        inside_zone:
+          type: boolean
+          title: Inside Zone
+        nearest_place:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nearest Place
+        action:
+          type: string
+          enum:
+          - none
+          - reassure
+          - alert
+          title: Action
+        reassurance_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reassurance Text
+        contacts:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Contacts
+          description: ordered contact ids notified on alert
+      type: object
+      required:
+      - inside_zone
+      - action
+      title: LocationPingResponse
+    Provenance:
+      properties:
+        source:
+          type: string
+          title: Source
+          description: e.g. seed | caregiver_web | voice_capture | document_ingest
+        added_by:
+          type: string
+          title: Added By
+          description: who added it (caregiver name / 'system' / 'amma')
+        added_ts:
+          type: string
+          format: date-time
+          title: Added Ts
+      type: object
+      required:
+      - source
+      - added_by
+      - added_ts
+      title: Provenance
+      description: Where a fact came from — attached to every embeddable row (grounding
+        §8/⭐4).
+    QueryRequest:
+      properties:
+        text:
+          type: string
+          title: Text
+        lang:
+          type: string
+          enum:
+          - en
+          - hi
+          - hi-en
+          title: Lang
+          default: en
+      type: object
+      required:
+      - text
+      title: QueryRequest
+    QueryResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RetrievedItem'
+          type: array
+          title: Items
+        grounded:
+          type: boolean
+          title: Grounded
+        confidence:
+          type: number
+          title: Confidence
+        answer_draft:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer Draft
+          description: LLM-ready draft; if grounded=false this is a safe refusal
+      type: object
+      required:
+      - grounded
+      - confidence
+      title: QueryResponse
+    RemindersResponse:
+      properties:
+        due:
+          items:
+            $ref: '#/components/schemas/DueReminder'
+          type: array
+          title: Due
+      type: object
+      title: RemindersResponse
+    RetrievedItem:
+      properties:
+        ref:
+          type: string
+          title: Ref
+          description: id of the source row
+        type:
+          type: string
+          enum:
+          - person
+          - place
+          - event
+          - medication
+          - med_log
+          - story
+          - episode
+          title: Type
+        text:
+          type: string
+          title: Text
+          description: human-readable rendering of the memory
+        score:
+          type: number
+          title: Score
+        provenance:
+          $ref: '#/components/schemas/Provenance'
+      type: object
+      required:
+      - ref
+      - type
+      - text
+      - score
+      - provenance
+      title: RetrievedItem
+      description: One grounded memory returned by retrieval, with its score + provenance.
+    TemporalRequest:
+      properties:
+        text:
+          type: string
+          title: Text
+        lang:
+          type: string
+          enum:
+          - en
+          - hi
+          - hi-en
+          title: Lang
+          default: en
+      type: object
+      required:
+      - text
+      title: TemporalRequest
+    TimelineBlock:
+      properties:
+        start_ts:
+          type: string
+          format: date-time
+          title: Start Ts
+        end_ts:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Ts
+        title:
+          type: string
+          title: Title
+        kind:
+          type: string
+          title: Kind
+          description: e.g. medication | event | episode | routine
+        refs:
+          items:
+            type: string
+          type: array
+          title: Refs
+        summary:
+          type: string
+          title: Summary
+      type: object
+      required:
+      - start_ts
+      - title
+      - kind
+      - summary
+      title: TimelineBlock
+    TimelineResponse:
+      properties:
+        blocks:
+          items:
+            $ref: '#/components/schemas/TimelineBlock'
+          type: array
+          title: Blocks
+      type: object
+      title: TimelineResponse
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VisionRequest:
+      properties:
+        image_b64:
+          type: string
+          title: Image B64
+      type: object
+      required:
+      - image_b64
+      title: VisionRequest
+    VisionResponse:
+      properties:
+        match:
+          anyOf:
+          - $ref: '#/components/schemas/RetrievedItem'
+          - type: 'null'
+        answer_draft:
+          type: string
+          title: Answer Draft
+      type: object
+      required:
+      - answer_draft
+      title: VisionResponse
+    WriteRequest:
+      properties:
+        type:
+          type: string
+          enum:
+          - person
+          - place
+          - event
+          - medication
+          - med_log
+          - story
+          - episode
+          title: Type
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+          description: a row of `type` (without server-assigned id); shape matches
+            the entity model
+      type: object
+      required:
+      - type
+      - payload
+      title: WriteRequest
+    WriteResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+      type: object
+      required:
+      - id
+      title: WriteResponse
