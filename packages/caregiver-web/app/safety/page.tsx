@@ -1,13 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { SafetyContact, SafetyAlert } from "@/app/api/safety/route";
+import ResolveModal from "@/components/ResolveModal";
 
 export default function SafetyPage() {
   const [contacts, setContacts] = useState<SafetyContact[]>([]);
   const [alerts, setAlerts] = useState<SafetyAlert[]>([]);
   const [recipient, setRecipient] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Resolve modal state
+  const [resolveId,  setResolveId]  = useState<string | null>(null);
+  const [fadingId,   setFadingId]   = useState<string | null>(null);
+
+  const openResolve   = useCallback((id: string) => setResolveId(id), []);
+  const cancelResolve = useCallback(() => setResolveId(null), []);
+  const confirmResolve = useCallback(() => {
+    if (!resolveId) return;
+    setResolveId(null);
+    setFadingId(resolveId);
+    setTimeout(() => {
+      setAlerts((prev) => prev.filter((a) => a.id !== resolveId));
+      setFadingId(null);
+    }, 300);
+  }, [resolveId]);
 
   useEffect(() => {
     fetch("/api/safety")
@@ -136,7 +153,10 @@ export default function SafetyPage() {
               {alerts.map((a) => (
                 <li
                   key={a.id}
-                  className="rounded-md border border-stone-100 bg-stone-50 px-4 py-3"
+                  onClick={() => openResolve(a.id)}
+                  className={`rounded-md border border-stone-100 bg-stone-50 px-4 py-3 cursor-pointer hover:border-stone-300 hover:shadow-sm transition-all duration-300 ${
+                    fadingId === a.id ? "opacity-0 scale-y-95 origin-top" : "opacity-100"
+                  }`}
                 >
                   <p className="text-xs text-stone-400 mb-1 italic">&ldquo;{a.query}&rdquo;</p>
                   <p className="text-sm text-stone-800 leading-relaxed mb-2">{a.response}</p>
@@ -158,6 +178,12 @@ export default function SafetyPage() {
         </div>
 
       </div>
+
+      <ResolveModal
+        open={resolveId !== null}
+        onConfirm={confirmResolve}
+        onCancel={cancelResolve}
+      />
     </div>
   );
 }

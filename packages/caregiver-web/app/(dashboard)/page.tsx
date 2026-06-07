@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { getReminders, getHealth } from "@/lib/api";
 import type { ReminderItem } from "@/lib/types";
 import type { UpcomingEvent } from "@/app/api/upcoming/route";
 import type { PriorityItem } from "@/app/api/priority/route";
+import ResolveModal from "@/components/ResolveModal";
 
 const TOPICS = [
   {
@@ -44,6 +45,22 @@ export default function DashboardPage() {
   const [health,    setHealth]      = useState<{ moss_ok: boolean; db_ok: boolean } | null>(null);
   const [loading,   setLoading]     = useState(true);
   const [priorityLoading, setPriorityLoading] = useState(true);
+
+  // Resolve modal state
+  const [resolveIdx,   setResolveIdx]   = useState<number | null>(null);
+  const [fadingIdx,    setFadingIdx]    = useState<number | null>(null);
+
+  const openResolve  = useCallback((i: number) => setResolveIdx(i), []);
+  const cancelResolve = useCallback(() => setResolveIdx(null), []);
+  const confirmResolve = useCallback(() => {
+    if (resolveIdx === null) return;
+    setResolveIdx(null);
+    setFadingIdx(resolveIdx);
+    setTimeout(() => {
+      setPriority((prev) => prev.filter((_, i) => i !== resolveIdx));
+      setFadingIdx(null);
+    }, 300);
+  }, [resolveIdx]);
 
   useEffect(() => {
     const ts = new Date().toISOString();
@@ -94,7 +111,10 @@ export default function DashboardPage() {
                 {priority.map((item, i) => (
                   <li
                     key={i}
-                    className="flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3"
+                    onClick={() => openResolve(i)}
+                    className={`flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 cursor-pointer hover:border-stone-300 hover:shadow-sm transition-all duration-300 ${
+                      fadingIdx === i ? "opacity-0 scale-y-95 origin-top" : "opacity-100"
+                    }`}
                   >
                     <span className="text-xs font-bold text-stone-400 w-4 shrink-0 mt-0.5">{i + 1}</span>
                     <div className="flex-1 min-w-0">
@@ -195,6 +215,12 @@ export default function DashboardPage() {
         </div>
 
       </div>
+
+      <ResolveModal
+        open={resolveIdx !== null}
+        onConfirm={confirmResolve}
+        onCancel={cancelResolve}
+      />
     </div>
   );
 }
