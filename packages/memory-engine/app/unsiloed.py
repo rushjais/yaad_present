@@ -13,6 +13,7 @@ lives in `ingest.py`, which calls this client + Groq + write_memory.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import httpx
@@ -26,7 +27,8 @@ CHAT_PATH = "/api/v1/playground/chat-with-document"
 # Unsiloed parse + index runs server-side; budget generously. Chat is faster.
 _UPLOAD_TIMEOUT = 120.0
 _CHAT_TIMEOUT = 60.0
-_CHAT_NOT_READY_DELAYS = (3.0, 8.0, 15.0, 30.0)
+_CHAT_READY_TIMEOUT = 210.0
+_CHAT_READY_INTERVAL = 10.0
 
 
 def _headers() -> dict[str, str]:
@@ -87,15 +89,15 @@ async def chat(doc_id: str, question: str) -> str:
     # `message` (not `question`).
     data = {"document_id": doc_id, "message": question}
     async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
-        for delay in (0.0, *_CHAT_NOT_READY_DELAYS):
-            if delay:
-                await asyncio.sleep(delay)
+        deadline = time.monotonic() + _CHAT_READY_TIMEOUT
+        while True:
             resp = await client.post(url, headers=_headers(), data=data)
             if not _is_document_not_ready(resp):
                 resp.raise_for_status()
                 return _extract_answer(resp.json())
-        resp.raise_for_status()
-        return _extract_answer(resp.json())
+            if time.monotonic() >= deadline:
+                resp.raise_for_status()
+            await asyncio.sleep(_CHAT_READY_INTERVAL)
 
 
 def _is_document_not_ready(resp: httpx.Response) -> bool:
