@@ -97,6 +97,9 @@ export default function MemoriesPage() {
       clearInterval(stageTimer);
       if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
       const data = await res.json();
+      if (!data.created_refs?.length) {
+        throw new Error(data.summary || data.error || "No memories were extracted from this document");
+      }
       setIngestResult({ summary: data.summary, created_refs: data.created_refs });
       setStatus("success");
       setPdfFile(null);

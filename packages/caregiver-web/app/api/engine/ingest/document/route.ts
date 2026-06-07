@@ -28,8 +28,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[ingest/document proxy]", err);
     return NextResponse.json(
-      { created_refs: [], summary: "Upload failed — engine unreachable.", raw_extraction: "" },
-      { status: 200 },
+      { error: "Upload failed — engine unreachable.", created_refs: [], summary: "", raw_extraction: "" },
+      { status: 502 },
     );
   }
 }
