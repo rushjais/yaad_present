@@ -50,19 +50,29 @@ from .tts_minimax import MiniMaxTTSService
 
 logger = logging.getLogger(__name__)
 
-# §6 grounding system prompt — English only (language scoped per CLAUDE.md)
+# §6 grounding system prompt — English + Hindi
 SYSTEM_PROMPT = (
     "You are Yaad, a warm companion for someone with memory loss. "
     "State ONLY facts in the provided MEMORY context. "
     "If the context is empty or confidence is low, say you're not sure and offer to check with the family. "
     "Never invent people, events, or dates. "
-    "Short, calm, warm. English only."
+    "Short, calm, warm. "
+    "LANGUAGE RULE: respond in the same language the user spoke. "
+    "If the user spoke Hindi, reply fully in Hindi (Devanagari script). "
+    "The MEMORY context is in English — translate your answer into Hindi if needed. "
+    "IDENTITY RULE: when asked who someone is ('Who is X?', 'Kaun hai X?', 'Yeh kaun hai?'), "
+    "search ALL items in the MEMORY context for a person entry containing a relationship word "
+    "(grandson, daughter, son, daughter-in-law, pota, beti, beta, nati, etc.). If found, ALWAYS "
+    "lead with that relationship in the user's language, then add one warm detail. "
+    "Never open with an event, a date, or a note. "
+    "If NO relationship word is in the MEMORY CONTEXT, do NOT invent one — give the safe refusal "
+    "in the user's language ('I\\'m not sure' / 'Mujhe pata nahi, main family se poochhunga')."
 )
 
 _TEMPORAL_KW = {
     "pill", "pills", "medicine", "medication", "tablet", "dose",
     "took", "taken", "today", "yesterday", "morning", "evening",
-    "coming", "visit", "appointment",
+    "coming", "visit", "appointment", "doctor", "checkup", "schedule",
 }
 
 
@@ -76,16 +86,17 @@ def _format_memory_context(resp: dict) -> str:
     return "\n".join(f"- {item['text']}" for item in resp["items"][:5])
 
 
-def _build_messages_semantic(user_text: str, memory_resp: dict) -> list[dict]:
-    """Build LLM messages for the SEMANTIC path (answer_draft is absent).
+def _build_messages_semantic(user_text: str, memory_resp: dict, lang: str = "en") -> list[dict]:
+    """Build LLM messages for the SEMANTIC path.
 
-    Only called when answer_draft is null/empty — meaning memory returned
-    ranked items[] to compose from, or nothing (safe refusal applies).
+    lang: "hi" → adds an explicit Hindi instruction so the LLM replies in Devanagari
+          even when the memory context (and most of its training) is English.
     """
     ctx = _format_memory_context(memory_resp)
+    lang_hint = "[LANGUAGE: user spoke Hindi — reply fully in Hindi / Devanagari]\n\n" if lang == "hi" else ""
     user_content = (
-        f"[MEMORY CONTEXT]\n{ctx}\n\n[USER SAID]: {user_text}"
-        if ctx else user_text
+        f"{lang_hint}[MEMORY CONTEXT]\n{ctx}\n\n[USER SAID]: {user_text}"
+        if ctx else f"{lang_hint}{user_text}"
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -132,6 +143,25 @@ class MemoryContextProcessor(FrameProcessor):
         self._llm = llm
         self._tracker = tracker
 
+    async def _translate_to_english(self, hindi_text: str) -> str:
+        """Translate a Hindi query to English for Moss retrieval.
+
+        Uses the same LLM already in the pipeline — no extra API key or import.
+        Returns the original text on any error (graceful fallback).
+        """
+        msgs = [
+            {"role": "system", "content": "Translate the following Hindi query to English. Return ONLY the translation, no explanation."},
+            {"role": "user", "content": hindi_text},
+        ]
+        try:
+            async with asyncio.timeout(2.0):
+                out = []
+                async for chunk in self._llm.complete(msgs):
+                    out.append(chunk)
+                return "".join(out).strip() or hindi_text
+        except Exception:
+            return hindi_text  # fallback: query in Hindi (will return 0 items but won't crash)
+
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
@@ -142,31 +172,46 @@ class MemoryContextProcessor(FrameProcessor):
         logger.info("Transcript: %s", frame.text)
         self._tracker.reset()
 
-        # Memory query
+        # Detect language from Groq's transcription
+        detected_lang = (getattr(frame, "language", None) or "en").strip().lower()
+        is_hindi = detected_lang == "hindi"
+        mem_lang = "hi" if is_hindi else "en"
+
+        # For Hindi queries: translate to English before hitting memory so Moss
+        # semantic search matches English chunks. The original Hindi text is kept
+        # for the LLM response-composition step (language hint).
+        query_text = frame.text
+        if is_hindi:
+            query_text = await self._translate_to_english(frame.text)
+            logger.info("Hindi→English for memory: %r", query_text)
+
+        # Memory query — track endpoint to distinguish temporal verbatim vs semantic hint.
         t0 = time.perf_counter()
+        used_temporal = _is_temporal(query_text)
         try:
             async with asyncio.timeout(3.0):
-                if _is_temporal(frame.text):
-                    resp = await self._memory.temporal(frame.text, "en")
+                if used_temporal:
+                    resp = await self._memory.temporal(query_text, "en")
                 else:
-                    resp = await self._memory.query(frame.text, "en")
+                    resp = await self._memory.query(query_text, "en")
         except Exception as e:
             logger.warning("Memory failed (%s) — fixture fallback", e)
-            resp = get_fixture(frame.text)
+            resp = get_fixture(query_text)
         self._tracker.memory = time.perf_counter() - t0
 
         answer_draft = (resp.get("answer_draft") or "").strip()
 
-        if answer_draft:
-            # TEMPORAL PATH — answer_draft encodes absence facts ("not yet taken")
-            # that have no semantic chunk. Emit verbatim; never let the LLM re-compose
-            # or it will silently drop medical negations like "not yet."
-            logger.info("answer_draft present — emitting directly, skipping LLM")
+        if used_temporal and answer_draft:
+            # TEMPORAL PATH — answer_draft pre-composes absence facts like
+            # "not yet taken" that have no semantic chunk. Emit verbatim;
+            # LLM re-composition would silently drop the negation.
+            logger.info("temporal answer_draft — emitting verbatim, skipping LLM")
             self._tracker.llm = 0.0
             await self.push_frame(TextFrame(answer_draft))
         else:
-            # SEMANTIC PATH — compose grounded answer from items[] via LLM
-            messages = _build_messages_semantic(frame.text, resp)
+            # SEMANTIC PATH — use original transcript (Hindi if spoken in Hindi)
+            # so the LLM sees what the user actually said and responds in kind.
+            messages = _build_messages_semantic(frame.text, resp, lang=mem_lang)
             t1 = time.perf_counter()
             first_token = True
             try:
