@@ -126,6 +126,8 @@ def _build_relations_for(ref: str,
 def _person_text(p: dict, relations: list[str]) -> str:
     aliases = p.get("aliases") or []
     parts: list[str] = [p["name"]]
+    if p.get("relationship") and not relations:
+        parts.append(p["relationship"])
     if relations:
         parts.append(", ".join(relations))
     if p.get("notes"):
