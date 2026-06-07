@@ -29,6 +29,7 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
   5. `answer_draft` for semantic queries is now the top chunk text — the voice agent's LLM rewrites it. Temporal still pre-composes (grounded negatives need exact phrasing).
   6. `scripts/reseed_moss.py --wipe` deletes the cloud index before reseeding. Use before demo or after dirty test runs.
   7. `graph.py` trimmed to ~50 lines — entity_text cache only (for capture).
+- Event writes now backfill `participant_ids`: `/memory/write` resolves person names mentioned in an event title/notes through Moss (top person hit ≥0.85), including lowercase mentions matched against known names/aliases, then updates the Supabase event row before returning.
 - Pre-v2 (still in place): intent classifier (regex+Groq), time-window parser, temporal routing with per-medication, capture w/ structured extraction + review queue, Moss session self-heal on startup.
 - **What shipped:**
   1. ✅ `scripts/reseed_moss.py` — Supabase → Moss reseed; runs on server startup hook so each fresh process self-heals (Moss `SessionIndex.session()` does NOT auto-resume the cloud index)

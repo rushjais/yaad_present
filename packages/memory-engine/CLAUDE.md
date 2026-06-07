@@ -22,6 +22,7 @@ The big shift: we used to walk a graph (edges + 1-hop expansion in retrieval.py)
 - `capture.py` — unchanged: Groq structured extraction → captured_fact + pending_review.
 - `graph.py` — trimmed to ~50 lines, entity_text cache only (used by capture).
 - `retrieval.py` — rewritten lean: Moss → τ → optional expansion → items[].
+- `/memory/write` event side effect — after saving an event, `main.py` resolves person names in `payload.title`/`payload.notes` through Moss (top hit type=person, score ≥0.85) and backfills `participant_ids` on the Supabase row. Lowercase caregiver entries are covered by case-insensitive matching against known person names/aliases before Moss verification.
 
 | Beat | Robustness score |
 |---|---|
@@ -96,9 +97,9 @@ curl -X POST http://localhost:8000/memory/query \
 | File | Status | What it does |
 |---|---|---|
 | `app/schemas.py` | ✅ BUILT | Pydantic contract — single source of truth. OpenAPI generated from this. |
-| `app/main.py` | ✅ BUILT | FastAPI app. All 9 endpoints. try/except → real logic or fixture fallback. ⚠ silent fixture fallback hides real errors — will be gated behind `YAAD_DEMO_MODE=1` in a follow-up. |
+| `app/main.py` | ✅ BUILT | FastAPI app. All 9 endpoints. try/except → real logic or fixture fallback. `/memory/write` also handles instant Moss upsert and event participant backfill. ⚠ silent fixture fallback hides real errors — will be gated behind `YAAD_DEMO_MODE=1` in a follow-up. |
 | `app/config.py` | ✅ BUILT | Pydantic settings. Accepts MOSS_PROJECT_ID or MOSS_ID. Strips whitespace from all values. |
-| `app/db.py` | ✅ BUILT | Supabase client: write_memory, fetch_med_logs_today, fetch_upcoming_events, db_ping. |
+| `app/db.py` | ✅ BUILT | Supabase client: write_memory, update_event_participants, fetch_med_logs_today, fetch_upcoming_events, db_ping. |
 | `app/moss_client.py` | ✅ BUILT | Moss SessionIndex: upsert (instant, local), upsert_batch, query, push_index. Metadata must be str→str. ⚠ `session(index_name=...)` does NOT reliably resume cloud index — reseed before demo. |
 | `app/intent.py` | 🚧 B7 BUILDING | Single understanding pass per query. Hybrid regex fast-path + Groq LLM fallback. Returns typed `Intent`. Consumed by temporal, capture, graph routers. |
 | `app/time_window.py` | 🚧 B7 BUILDING | Relative-time parser: "today"/"yesterday"/"this morning"/"before lunch" → (start_ts, end_ts) user-local. |

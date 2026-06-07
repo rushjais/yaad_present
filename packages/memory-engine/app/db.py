@@ -62,6 +62,11 @@ async def write_memory(entity_type: str, payload: dict[str, Any]) -> dict:
     return {"id": row_id}
 
 
+async def update_event_participants(event_id: str, participant_ids: list[str]) -> None:
+    client = _client()
+    client.table("events").update({"participant_ids": participant_ids}).eq("id", event_id).execute()
+
+
 # ---------------------------------------------------------------------------
 # Fetch helpers used by retrieval / temporal
 # ---------------------------------------------------------------------------
