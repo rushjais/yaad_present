@@ -7,6 +7,9 @@ Body fields per official .io OpenAPI:
   output_format: "hex"
   voice_setting.voice_id: "English_Graceful_Lady"
 Response: data.audio = hex-encoded MP3; base_resp.status_code 0 = OK, 1004 = auth fail.
+
+Key is read at __init__ time (not module level) so load_dotenv() in agent.py
+has already run before MiniMaxTTSService is instantiated.
 """
 
 import io
@@ -28,10 +31,10 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  #
 
 logger = logging.getLogger(__name__)
 
-MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
+# Non-secret config — safe to read at module level
 MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "English_Graceful_Lady").strip()
 MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-02-hd").strip()
-MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"  # NO GroupId for .io endpoint
+MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"  # NO GroupId — .io international endpoint
 OUTPUT_SAMPLE_RATE = 32000
 
 
@@ -45,6 +48,18 @@ class MiniMaxTTSService(FrameProcessor):
     def __init__(self, tracker=None) -> None:
         super().__init__()
         self._tracker = tracker
+        # Read key at __init__ time (after load_dotenv() has run in agent.py)
+        self._api_key = os.environ.get("MINIMAX_API_KEY", "").strip()
+
+        # Startup diagnostics — always log key length so missing keys surface immediately
+        key_len = len(self._api_key)
+        if self._api_key:
+            logger.info("MiniMax key loaded: %d chars", key_len)
+        else:
+            raise RuntimeError(
+                "MINIMAX_API_KEY is empty — set it in packages/voice-agent/.env. "
+                "Agent cannot start without a TTS key."
+            )
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -82,8 +97,8 @@ class MiniMaxTTSService(FrameProcessor):
         }
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(
-                MINIMAX_URL,  # no GroupId — .io international endpoint
-                headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
+                MINIMAX_URL,
+                headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
                 json=payload,
             )
             r.raise_for_status()

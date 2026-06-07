@@ -20,7 +20,11 @@ import logging
 import os
 import time
 
+# load_dotenv FIRST — before any local imports that read env vars at module level.
+# tts_minimax.py and others capture constants on import; if .env isn't loaded yet
+# those constants are empty strings. This ordering fixes the "Bearer " bug.
 from dotenv import load_dotenv
+load_dotenv()
 
 # [CONFIRM] pipecat import paths — adjust for installed version
 from pipecat.frames.frames import (  # type: ignore
@@ -44,7 +48,6 @@ from .stt_groq import create_stt
 from .transports import create_transport, create_vad
 from .tts_minimax import MiniMaxTTSService
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
 # §6 grounding system prompt — English only (language scoped per CLAUDE.md)
