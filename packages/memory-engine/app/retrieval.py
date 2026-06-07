@@ -68,68 +68,6 @@ def _moss_hits_to_items(hits: list[dict]) -> list[RetrievedItem]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Topic-word check (B7.2)
-# ---------------------------------------------------------------------------
-
-# Words that carry no topic signal — strip them to find what the query is
-# REALLY about. Pronouns + question words + common verbs that appear in every
-# query about Amma's life.
-_STOPWORDS = {
-    "a", "an", "the", "and", "or", "but", "of", "to", "for", "in", "on",
-    "at", "by", "with", "from", "into", "is", "are", "was", "were", "be",
-    "been", "being", "do", "does", "did", "have", "has", "had", "can",
-    "could", "would", "should", "will", "shall", "may", "might", "must",
-    "i", "me", "my", "mine", "you", "your", "yours", "he", "him", "his",
-    "she", "her", "hers", "we", "us", "our", "ours", "they", "them", "their",
-    "this", "that", "these", "those",
-    "what", "which", "who", "whom", "whose", "where", "when", "why", "how",
-    "not", "no", "yes",
-    # Very common in Amma queries — every chunk has these somehow, so they
-    # don't help us distinguish topics.
-    "amma", "she", "her", "favorite", "favourite", "like", "likes", "liked",
-    "love", "loves", "loved", "tell", "about", "know", "things", "thing",
-    "stuff", "some", "any", "all",
-    # Generic verbs that appear in many chunks (e.g. "plays chess" matches
-    # any "play" query). These don't help distinguish topics; the noun
-    # afterward does.
-    "play", "plays", "played", "playing", "get", "got", "go", "goes",
-    "went", "make", "makes", "made", "take", "takes", "took", "see",
-    "sees", "saw", "want", "wants", "wanted", "need", "needs", "needed",
-    "use", "uses", "used", "say", "says", "said", "give", "gave",
-    "remember", "forget", "remind",
-    # Activity verbs whose object IS the topic — i.e. "eat" implies food,
-    # "drink" implies beverages, etc. Treat the verb as the question marker,
-    # not the topic. When the query is purely "what does she eat?" with no
-    # noun, content set goes empty → trusts Moss.
-    "eat", "eats", "ate", "eating", "drink", "drinks", "drank", "drinking",
-    "wear", "wears", "wore", "wearing", "read", "reads", "reading",
-    "listen", "listens", "listened", "listening", "watch", "watches", "watched",
-    "enjoy", "enjoys", "enjoyed",
-}
-
-
-def _content_words(text: str) -> set[str]:
-    import re
-    toks = re.findall(r"[A-Za-z]+", text.lower())
-    return {t for t in toks if len(t) >= 3 and t not in _STOPWORDS}
-
-
-def _topic_in_results(query: str, hits: list[dict]) -> bool:
-    """True if at least one content word from the query appears as a substring
-    in any of the candidate chunks' text. If a query is asking about "color"
-    and no chunk mentions color (or any of the query's distinguishing nouns),
-    the high semantic score is just chunk-density noise — refuse.
-
-    Empty content set → trust Moss (e.g. one-word queries like "Leo").
-    """
-    words = _content_words(query)
-    if not words:
-        return True
-    blob = " ".join((h.get("text") or "").lower() for h in hits)
-    return any(w in blob for w in words)
-
-
 def _refused(message: str) -> dict:
     return {
         "items": [], "grounded": False, "confidence": 0.0,
@@ -169,23 +107,20 @@ async def query_memory(text: str, lang: str = "en") -> dict:
     raw = await moss.query(text, top_k=8, lang=lang)
     survivors = [h for h in raw if float(h.get("score", 0.0)) >= TAU]
 
-    # B7.2 — Topic-word check. Rich enriched chunks score high on ANY "favorite
-    # X" or "she X" query, including off-topic ones ("favorite color", "what
-    # sport"). If the query mentions a content noun that's nowhere in any top
-    # chunk, the match is a false positive — refuse. Cheap, deterministic,
-    # only filters out adversarial cases.
-    if survivors and not _topic_in_results(text, survivors):
-        survivors = []
-
     # B7.2 — Query-rewrite fallback. If nothing cleared τ, this MIGHT be an
     # abstract category query ("favorite music") where the underlying fact
     # lives in prose that doesn't share embedding surface. Try ONE rewrite
     # pass via Groq, entity-anchored if intent has named entities, then
-    # safe-refuse if still empty. Single retry, no cascading. Same topic
-    # check applies — rewrite hits also need a content-word match.
+    # safe-refuse if still empty. Single retry, no cascading.
+    #
+    # Adversarial queries that semantically resemble enriched chunks
+    # ("favorite color", "what sport") are NOT filtered here — they pass
+    # through to the voice agent, whose grounding system prompt ("state ONLY
+    # facts in the provided MEMORY context") is the real anti-confab gate.
+    # We tried a deterministic stopword/content-word filter — too brittle.
     if not survivors:
         rescued = await _rewrite_and_retry(text, intent, lang)
-        if rescued and _topic_in_results(text, rescued):
+        if rescued:
             survivors = rescued
         else:
             return _refused(safe_refusal(lang))

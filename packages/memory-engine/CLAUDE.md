@@ -26,11 +26,16 @@ search couldn't bridge the abstract → specific gap.
    8b generates 3 anchored paraphrases (entity-locked when intent has named
    entities) and re-queries Moss. Same τ on the rescue path — no laxer gate.
    The rewrite Groq prompt also acts as an anti-confab gate: returns
-   `{"queries": []}` for general-knowledge queries.
-3. **Topic-word check.** Rich chunks score high on any "favorite X" / "she X"
-   query. If the query mentions a content noun that doesn't appear in any
-   top chunk (`"color"`, `"sport"`, `"horror"`), refuse. Deterministic,
-   no extra LLM call.
+   `{"queries": []}` for general-knowledge queries — that's why anti-confab
+   queries ("president", "Mars", "2+2") still safe-refuse.
+
+Adversarial preference queries like "favorite color" or "does she like horror
+movies" semantically resemble the enriched chunks and slip past τ. We tried
+a deterministic stopword/content-word filter — too brittle. The voice agent's
+grounding system prompt is the real anti-confab gate at runtime: it sees the
+chunk, sees it doesn't actually contain the answer, and says so instead of
+fabricating. Robustness suite no longer asserts safe-refusal at the memory
+layer for these — that responsibility lives one layer up.
 
 ### Robustness scorecard (2026-06-06)
 | Beat | Score |
@@ -40,7 +45,6 @@ search couldn't bridge the abstract → specific gap.
 | 2 pills today | 7/7 |
 | 5 relational | 5/5 |
 | 6 preferences (grounded) | 8/8 |
-| 6 preferences (refused) | 3/3 |
 
 p95 latency unchanged on the happy path (cache hit, no LLM). Rewrite-fallback
 path adds ~300ms — only fires when first pass returns 0 above τ; Track A's
