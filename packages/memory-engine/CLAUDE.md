@@ -112,6 +112,8 @@ curl -X POST http://localhost:8000/memory/query \
 | `app/reminders.py` | ✅ BUILT | `/reminders/due`: rrule med schedule + 30-min event window. |
 | `app/location.py` | ✅ BUILT | Wander safety: haversine vs safe_zone → reassure + Twilio alert. NEVER navigates. |
 | `app/vision.py` | ✅ BUILT | Optional: image → VLM describe → Moss match. Fixture fallback. No OpenAI key yet. |
+| `app/unsiloed.py` | ✅ BUILT | Unsiloed REST client: `upload(bytes, filename) → doc_id`, `chat(doc_id, message) → str`. Field names: multipart `document`, form-data `message` (NOT `file`/`question` — Unsiloed quirk, confirmed 2026-06-06). |
+| `app/ingest.py` | ✅ BUILT | High-level: PDF → Unsiloed parse → Groq normalize → typed records → write_memory + Moss upsert. Auto-commits medications + events (with absolute dates) + persons + a story for the doc summary. |
 | `tests/smoke_test.py` | ✅ BUILT | 20-case grounding/latency table. Still authoritative for endpoint contract. |
 | `tests/robustness.py` | 🚧 B7 BUILDING | 30+ phrasings per demo beat (ground-truth → grounded; adversarial → safe-refused). Per-beat pass/fail = ship readiness. |
 | `scripts/seed_amma.py` | ✅ RAN | Initial seeded. Do NOT re-run — append-only, duplicates rows. |
@@ -163,10 +165,9 @@ open('.env', 'w').writelines(lines)
 6. `tests/robustness.py` — 30+ phrasings per beat. Green here = ship ready.
 7. Final commit + push.
 
-Deferred (B8+ if time): `app/unsiloed.py` (PDF → structured memories), `YAAD_DEMO_MODE=1` flag for the silent-fixture fallback in `main.py`, vision module needs OpenAI key.
+Deferred (B8+ if time): `YAAD_DEMO_MODE=1` flag for the silent-fixture fallback in `main.py`, vision module needs OpenAI key.
 
 ## Open items
-- `unsiloed.py`: not built — API confirmed, see STATUS.md
 - `vision.py`: needs OpenAI key or on-device VLM — fixture fallback fires for now
 - Twilio SMS: fires with current keys but location alert not tested end-to-end
 - TrueFoundry: key in `.env` but `TRUEFOUNDRY_BASE_URL` still unknown — not used by memory engine

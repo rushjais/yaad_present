@@ -22,9 +22,11 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - **Heads-up from Track B:** B7 `items[]` may contain graph-expanded neighbors with derived text — treat `items[].text` as authoritative, do NOT reparse. Intent-routed responses may take ~200ms on LLM fallback; speculative fire on partial transcript handles this.
 
 ### Track B — Memory (Keshav)
-- Phase: **B7.1 — Chunks + τ simplification complete (2026-06-06)** ✅
+- Phase: **B7.1 + Unsiloed ingestion complete (2026-06-06)** ✅
   - See `MEMORY_V2_README.md` for the teammate-facing summary of what changed and why.
 - 43/43 tests green: 15 smoke + 28 robustness, p95 = 22ms.
+- **Unsiloed ingestion shipped (2026-06-06):** new `POST /ingest/document` endpoint. Upload a medical PDF → Unsiloed parses → Groq normalizes into typed Yaad records → write_memory + Moss upsert. Smoke test (`scripts/smoke_unsiloed.py`) extracts Aspirin + Metoprolol + Dr. Patel + follow-up appointment from a synthetic discharge summary and they're queryable on the next turn. Earns the §18 Unsiloed sponsor checkbox. Field-name quirks logged in `app/unsiloed.py` (multipart field is `document`, form field is `message`).
+- **Bug fixed in passing:** `db.write_memory` was popping `source`/`added_by` AFTER `**payload` spread, so any caller passing those keys hit PGRST204. Pre-existing latent bug; surfaced by ingest, fixed by popping before spread. No existing call sites affected.
 - Pitch language updated: dropped "memory graph" framing → **"a living memory that lives inside the agent"** (instant updates, on-device, sub-10ms).
 - **What changed in v2:**
   1. Killed graph expansion + relational-walk + 4-layer guards. Single hard τ=0.82 relevance gate.
@@ -57,7 +59,7 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 | Twilio | ✅ LIVE | Account active. SMS fires with current keys. |
 | LiveKit | ✅ LIVE | Connected to `wss://keepsake-y39026vu.livekit.cloud`, room `yaad-demo` confirmed. |
 | TrueFoundry | ✅ LIVE | `gateway.truefoundry.ai`, model `openai/gpt-4o-mini`. Confirmed by Track A. |
-| Unsiloed | ✅ LIVE | Base: `https://platformbackend.unsiloed.ai`. Auth: `Api-Key` header. Upload: multipart `POST /api/v1/playground/upload-document`. Query: form-data `POST /api/v1/playground/chat-with-document`. Tested: extracted "Aspirin 100mg daily at 8am" from test PDF. |
+| Unsiloed | ✅ LIVE & WIRED | Base: `https://platformbackend.unsiloed.ai`. Auth: `Api-Key` header. Upload field: multipart `document` (NOT `file`). Chat field: form-data `message` (NOT `question`). Wired into memory engine via `POST /ingest/document` — see `app/unsiloed.py` + `app/ingest.py`. End-to-end smoke green: discharge PDF → 2 meds + 1 event + 2 persons + 1 story → all queryable. |
 | Deepgram | ❌ NO KEY | Using Groq Whisper instead. No action needed. |
 | OpenAI | ❌ NO KEY | Optional — vision only. Skip for now. |
 
