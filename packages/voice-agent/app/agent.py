@@ -16,6 +16,7 @@ which Pipecat propagates to cancel in-flight work downstream.
 
 import asyncio
 import dataclasses
+import json
 import logging
 import os
 import time
@@ -212,8 +213,7 @@ class MemoryContextProcessor(FrameProcessor):
 
         # Toggle is source of truth; Groq auto-detect is a safety net.
         toggle_lang = self._lang_state.lang if self._lang_state else "en"
-        detected_lang = (getattr(frame, "language", None) or "en").strip().lower()
-        is_hindi = (toggle_lang == "hi") or (detected_lang == "hindi")
+        is_hindi = (toggle_lang == "hi")
         mem_lang = "hi" if is_hindi else "en"
         logger.info("[%s] Transcript: %s", "HI" if is_hindi else "EN", frame.text)
         self._tracker.reset()
@@ -258,22 +258,28 @@ class MemoryContextProcessor(FrameProcessor):
             messages = _build_messages_semantic(frame.text, resp, lang=mem_lang)
             t1 = time.perf_counter()
             first_token = True
+            chunks = []
             try:
                 async for chunk in self._llm.complete(messages):
                     if first_token:
                         self._tracker.llm = time.perf_counter() - t1
                         first_token = False
-                    await self.push_frame(TextFrame(chunk))
+                    chunks.append(chunk)
             except Exception as e:
                 logger.error("LLM error: %s", e)
                 await self.push_frame(TextFrame("I'm sorry, I'm having trouble thinking right now."))
+            if chunks:
+                import re
+                text = "".join(chunks).strip()
+                parts = re.split(r'(?<=[.!?])\s+', text)
+                await self.push_frame(TextFrame(" ".join(parts[:2])))
 
 
 # ---------------------------------------------------------------------------
 # Sentence aggregator
 # ---------------------------------------------------------------------------
 
-_SENTENCE_ENDS = {".", "!", "?", "…"}
+_SENTENCE_ENDS = {".", "!", "?", "…", "।", "॥"}
 # Flush on clause-internal punctuation once we have enough text so TTS starts
 # speaking the first clause while the LLM is still generating the rest.
 _CLAUSE_ENDS = {",", ";", ":"}
@@ -358,6 +364,16 @@ async def run_agent(room_name: str) -> None:
     transport = create_transport(room_name)
     pipeline, memory_client, lang_state = _build_pipeline(transport)
     start_lang_listener(lang_state)
+
+    @transport.event_handler("on_data_received")
+    async def _on_data(_transport, data: bytes, participant_id: str) -> None:
+        try:
+            msg = json.loads(data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else data)
+            if msg.get("type") == "set_lang" and msg.get("lang") in ("en", "hi"):
+                lang_state._lang = msg["lang"]
+                logger.info("Language set to %s via frontend toggle", msg["lang"].upper())
+        except Exception:
+            pass
 
     task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
     reminder_queue: asyncio.Queue = asyncio.Queue()

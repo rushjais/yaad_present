@@ -40,6 +40,7 @@ export default function VoicePage() {
   const [state, setState] = useState<AgentState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptLine[]>([]);
+  const [lang, setLang] = useState<"en" | "hi">("en");
   const roomRef = useRef<Room | null>(null);
   const audioContainerRef = useRef<HTMLDivElement>(null);
 
@@ -140,6 +141,16 @@ export default function VoicePage() {
     else if (state !== "connecting") disconnect();
   }, [state, connect, disconnect]);
 
+  const toggleLang = useCallback(() => {
+    const next = lang === "en" ? "hi" : "en";
+    setLang(next);
+    const room = roomRef.current;
+    if (room) {
+      const msg = JSON.stringify({ type: "set_lang", lang: next });
+      room.localParticipant.publishData(new TextEncoder().encode(msg), { reliable: true });
+    }
+  }, [lang]);
+
   // Clean up on unmount
   useEffect(() => () => { roomRef.current?.disconnect(); }, []);
 
@@ -153,12 +164,17 @@ export default function VoicePage() {
       {/* Header */}
       <header className="voice-header">
         <a href="/" className="voice-logo">Yaad</a>
-        {isActive && (
-          <span className="voice-live-badge">
-            <span className="live-dot" />
-            Live
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          {isActive && (
+            <span className="voice-live-badge">
+              <span className="live-dot" />
+              Live
+            </span>
+          )}
+          <button onClick={toggleLang} className="lang-toggle" title="Switch language">
+            {lang === "en" ? "हि" : "EN"}
+          </button>
+        </div>
       </header>
 
       {/* Main orb area */}
@@ -283,6 +299,20 @@ const CSS = `
     justify-content: space-between;
     padding: 1.5rem 2.5rem;
   }
+
+  .lang-toggle {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #e8a832;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: background 0.15s;
+  }
+  .lang-toggle:hover { background: rgba(255,255,255,0.12); }
 
   .voice-logo {
     font-size: 1.25rem;
