@@ -143,6 +143,25 @@ class MemoryContextProcessor(FrameProcessor):
         self._llm = llm
         self._tracker = tracker
 
+    async def _translate_to_english(self, hindi_text: str) -> str:
+        """Translate a Hindi query to English for Moss retrieval.
+
+        Uses the same LLM already in the pipeline — no extra API key or import.
+        Returns the original text on any error (graceful fallback).
+        """
+        msgs = [
+            {"role": "system", "content": "Translate the following Hindi query to English. Return ONLY the translation, no explanation."},
+            {"role": "user", "content": hindi_text},
+        ]
+        try:
+            async with asyncio.timeout(2.0):
+                out = []
+                async for chunk in self._llm.complete(msgs):
+                    out.append(chunk)
+                return "".join(out).strip() or hindi_text
+        except Exception:
+            return hindi_text  # fallback: query in Hindi (will return 0 items but won't crash)
+
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
@@ -153,23 +172,31 @@ class MemoryContextProcessor(FrameProcessor):
         logger.info("Transcript: %s", frame.text)
         self._tracker.reset()
 
-        # Detect language from Groq's transcription (used for memory query + LLM language hint)
+        # Detect language from Groq's transcription
         detected_lang = (getattr(frame, "language", None) or "en").strip().lower()
-        mem_lang = "hi" if detected_lang == "hindi" else "en"
+        is_hindi = detected_lang == "hindi"
+        mem_lang = "hi" if is_hindi else "en"
 
-        # Memory query — track which endpoint was used so we know if answer_draft
-        # is a pre-composed temporal fact (must speak verbatim) or a semantic hint.
+        # For Hindi queries: translate to English before hitting memory so Moss
+        # semantic search matches English chunks. The original Hindi text is kept
+        # for the LLM response-composition step (language hint).
+        query_text = frame.text
+        if is_hindi:
+            query_text = await self._translate_to_english(frame.text)
+            logger.info("Hindi→English for memory: %r", query_text)
+
+        # Memory query — track endpoint to distinguish temporal verbatim vs semantic hint.
         t0 = time.perf_counter()
-        used_temporal = _is_temporal(frame.text)
+        used_temporal = _is_temporal(query_text)
         try:
             async with asyncio.timeout(3.0):
                 if used_temporal:
-                    resp = await self._memory.temporal(frame.text, mem_lang)
+                    resp = await self._memory.temporal(query_text, "en")
                 else:
-                    resp = await self._memory.query(frame.text, mem_lang)
+                    resp = await self._memory.query(query_text, "en")
         except Exception as e:
             logger.warning("Memory failed (%s) — fixture fallback", e)
-            resp = get_fixture(frame.text)
+            resp = get_fixture(query_text)
         self._tracker.memory = time.perf_counter() - t0
 
         answer_draft = (resp.get("answer_draft") or "").strip()
@@ -182,7 +209,8 @@ class MemoryContextProcessor(FrameProcessor):
             self._tracker.llm = 0.0
             await self.push_frame(TextFrame(answer_draft))
         else:
-            # SEMANTIC PATH — compose grounded answer from items[] via LLM.
+            # SEMANTIC PATH — use original transcript (Hindi if spoken in Hindi)
+            # so the LLM sees what the user actually said and responds in kind.
             messages = _build_messages_semantic(frame.text, resp, lang=mem_lang)
             t1 = time.perf_counter()
             first_token = True
