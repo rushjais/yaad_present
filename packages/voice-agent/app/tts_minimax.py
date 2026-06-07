@@ -1,15 +1,13 @@
-"""MiniMax TTS service — English, international endpoint.
+"""MiniMax TTS service — English + Hindi, international endpoint.
 
 Spec: POST https://api.minimax.io/v1/t2a_v2   (NO GroupId — .io endpoint)
-Headers: Authorization: Bearer {MINIMAX_API_KEY}
-Body fields per official .io OpenAPI:
-  model: "speech-02-hd"
-  output_format: "hex"
-  voice_setting.voice_id: "English_Graceful_Lady"
-Response: data.audio = hex-encoded MP3; base_resp.status_code 0 = OK, 1004 = auth fail.
+Language detection: checks for Devanagari characters in the response text.
+  Devanagari → Hindi voice (MINIMAX_VOICE_HI) + language_boost:"Hindi"
+  Otherwise  → English voice (MINIMAX_VOICE_EN)
 
-Key is read at __init__ time (not module level) so load_dotenv() in agent.py
-has already run before MiniMaxTTSService is instantiated.
+[CONFIRM] MINIMAX_VOICE_HI: "Wise_Woman" is multilingual and confirmed on
+  the China platform; verify it works on api.minimax.io for Hindi.
+  If it returns 1004/wrong voice, override MINIMAX_VOICE_HI in .env.
 """
 
 import io
@@ -33,9 +31,15 @@ logger = logging.getLogger(__name__)
 
 # Non-secret config — safe to read at module level
 MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "English_Graceful_Lady").strip()
+MINIMAX_VOICE_HI = os.environ.get("MINIMAX_VOICE_HI", "Wise_Woman").strip()  # [CONFIRM] on .io
 MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-02-hd").strip()
 MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"  # NO GroupId — .io international endpoint
 OUTPUT_SAMPLE_RATE = 32000
+
+
+def _contains_devanagari(text: str) -> bool:
+    """Detect Hindi by Devanagari Unicode block (U+0900–U+097F)."""
+    return any(0x0900 <= ord(c) <= 0x097F for c in text)
 
 
 def _mp3_to_pcm(mp3_bytes: bytes) -> bytes:
@@ -82,12 +86,17 @@ class MiniMaxTTSService(FrameProcessor):
             await self.push_frame(TTSStoppedFrame())
 
     async def _synthesize(self, text: str) -> bytes:
+        is_hindi = _contains_devanagari(text)
+        voice_id = MINIMAX_VOICE_HI if is_hindi else MINIMAX_VOICE_EN
+        if is_hindi:
+            logger.debug("Hindi detected — voice=%s language_boost=Hindi", voice_id)
         payload = {
             "model": MINIMAX_MODEL,
             "text": text,
             "stream": False,
             "output_format": "hex",
-            "voice_setting": {"voice_id": MINIMAX_VOICE_EN, "speed": 1, "vol": 1, "pitch": 0},
+            **({"language_boost": "Hindi"} if is_hindi else {}),
+            "voice_setting": {"voice_id": voice_id, "speed": 1, "vol": 1, "pitch": 0},
             "audio_setting": {
                 "sample_rate": OUTPUT_SAMPLE_RATE,
                 "bitrate": 128000,

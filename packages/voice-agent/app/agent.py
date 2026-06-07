@@ -50,19 +50,23 @@ from .tts_minimax import MiniMaxTTSService
 
 logger = logging.getLogger(__name__)
 
-# §6 grounding system prompt — English only (language scoped per CLAUDE.md)
+# §6 grounding system prompt — English + Hindi
 SYSTEM_PROMPT = (
     "You are Yaad, a warm companion for someone with memory loss. "
     "State ONLY facts in the provided MEMORY context. "
     "If the context is empty or confidence is low, say you're not sure and offer to check with the family. "
     "Never invent people, events, or dates. "
-    "Short, calm, warm. English only. "
-    "IDENTITY RULE: when asked who someone is ('Who is X?', 'Who is this?'), search ALL items "
-    "in the MEMORY context for a person entry that contains a relationship word (grandson, "
-    "daughter, son, daughter-in-law, friend, etc.). If found, ALWAYS lead with that relationship "
-    "— e.g. 'That\\'s Leo, your grandson' — then add one warm detail. Never open with an event, "
-    "a date, or a note. If NO relationship word appears anywhere in the context for that person, "
-    "do NOT invent one — say 'I\\'m not sure who X is to you. Let me check with the family.'"
+    "Short, calm, warm. "
+    "LANGUAGE RULE: respond in the same language the user spoke. "
+    "If the user spoke Hindi, reply fully in Hindi (Devanagari script). "
+    "The MEMORY context is in English — translate your answer into Hindi if needed. "
+    "IDENTITY RULE: when asked who someone is ('Who is X?', 'Kaun hai X?', 'Yeh kaun hai?'), "
+    "search ALL items in the MEMORY context for a person entry containing a relationship word "
+    "(grandson, daughter, son, daughter-in-law, pota, beti, beta, nati, etc.). If found, ALWAYS "
+    "lead with that relationship in the user's language, then add one warm detail. "
+    "Never open with an event, a date, or a note. "
+    "If NO relationship word is in the MEMORY CONTEXT, do NOT invent one — give the safe refusal "
+    "in the user's language ('I\\'m not sure' / 'Mujhe pata nahi, main family se poochhunga')."
 )
 
 _TEMPORAL_KW = {
@@ -82,16 +86,17 @@ def _format_memory_context(resp: dict) -> str:
     return "\n".join(f"- {item['text']}" for item in resp["items"][:5])
 
 
-def _build_messages_semantic(user_text: str, memory_resp: dict) -> list[dict]:
-    """Build LLM messages for the SEMANTIC path (answer_draft is absent).
+def _build_messages_semantic(user_text: str, memory_resp: dict, lang: str = "en") -> list[dict]:
+    """Build LLM messages for the SEMANTIC path.
 
-    Only called when answer_draft is null/empty — meaning memory returned
-    ranked items[] to compose from, or nothing (safe refusal applies).
+    lang: "hi" → adds an explicit Hindi instruction so the LLM replies in Devanagari
+          even when the memory context (and most of its training) is English.
     """
     ctx = _format_memory_context(memory_resp)
+    lang_hint = "[LANGUAGE: user spoke Hindi — reply fully in Hindi / Devanagari]\n\n" if lang == "hi" else ""
     user_content = (
-        f"[MEMORY CONTEXT]\n{ctx}\n\n[USER SAID]: {user_text}"
-        if ctx else user_text
+        f"{lang_hint}[MEMORY CONTEXT]\n{ctx}\n\n[USER SAID]: {user_text}"
+        if ctx else f"{lang_hint}{user_text}"
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -148,18 +153,20 @@ class MemoryContextProcessor(FrameProcessor):
         logger.info("Transcript: %s", frame.text)
         self._tracker.reset()
 
+        # Detect language from Groq's transcription (used for memory query + LLM language hint)
+        detected_lang = (getattr(frame, "language", None) or "en").strip().lower()
+        mem_lang = "hi" if detected_lang == "hindi" else "en"
+
         # Memory query — track which endpoint was used so we know if answer_draft
-        # is a pre-composed temporal fact (must speak verbatim) or a semantic hint
-        # (Keshav's v2 populates answer_draft on /query too, but it's just the top
-        # chunk text — the LLM must still compose the spoken answer).
+        # is a pre-composed temporal fact (must speak verbatim) or a semantic hint.
         t0 = time.perf_counter()
         used_temporal = _is_temporal(frame.text)
         try:
             async with asyncio.timeout(3.0):
                 if used_temporal:
-                    resp = await self._memory.temporal(frame.text, "en")
+                    resp = await self._memory.temporal(frame.text, mem_lang)
                 else:
-                    resp = await self._memory.query(frame.text, "en")
+                    resp = await self._memory.query(frame.text, mem_lang)
         except Exception as e:
             logger.warning("Memory failed (%s) — fixture fallback", e)
             resp = get_fixture(frame.text)
@@ -176,9 +183,7 @@ class MemoryContextProcessor(FrameProcessor):
             await self.push_frame(TextFrame(answer_draft))
         else:
             # SEMANTIC PATH — compose grounded answer from items[] via LLM.
-            # Includes semantic queries where v2 populates answer_draft as a hint;
-            # the LLM still runs so the identity rule and grounding prompt apply.
-            messages = _build_messages_semantic(frame.text, resp)
+            messages = _build_messages_semantic(frame.text, resp, lang=mem_lang)
             t1 = time.perf_counter()
             first_token = True
             try:
