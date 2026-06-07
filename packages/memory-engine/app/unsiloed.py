@@ -12,6 +12,7 @@ lives in `ingest.py`, which calls this client + Groq + write_memory.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -25,6 +26,7 @@ CHAT_PATH = "/api/v1/playground/chat-with-document"
 # Unsiloed parse + index runs server-side; budget generously. Chat is faster.
 _UPLOAD_TIMEOUT = 120.0
 _CHAT_TIMEOUT = 60.0
+_CHAT_NOT_READY_DELAYS = (3.0, 8.0, 15.0, 30.0)
 
 
 def _headers() -> dict[str, str]:
@@ -85,9 +87,29 @@ async def chat(doc_id: str, question: str) -> str:
     # `message` (not `question`).
     data = {"document_id": doc_id, "message": question}
     async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
-        resp = await client.post(url, headers=_headers(), data=data)
+        for delay in (0.0, *_CHAT_NOT_READY_DELAYS):
+            if delay:
+                await asyncio.sleep(delay)
+            resp = await client.post(url, headers=_headers(), data=data)
+            if not _is_document_not_ready(resp):
+                resp.raise_for_status()
+                return _extract_answer(resp.json())
         resp.raise_for_status()
         return _extract_answer(resp.json())
+
+
+def _is_document_not_ready(resp: httpx.Response) -> bool:
+    if resp.status_code != 404:
+        return False
+    try:
+        payload = resp.json()
+    except ValueError:
+        return False
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return False
+    message = str(error.get("message") or "").lower()
+    return error.get("code") == "not_found" and "document not found" in message
 
 
 async def ping() -> bool:

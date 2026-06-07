@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 
 from groq import AsyncGroq
 
+from .lang_toggle import LanguageState
+
 # [CONFIRM] pipecat import paths
 from pipecat.frames.frames import (  # type: ignore
     AudioRawFrame,
@@ -59,7 +61,7 @@ class GroqWhisperSTTService(FrameProcessor):
     MemoryContextProcessor for lang-aware memory queries).
     """
 
-    def __init__(self, tracker=None) -> None:
+    def __init__(self, tracker=None, lang_state: LanguageState | None = None) -> None:
         super().__init__()
         self._client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"].strip())
         self._buffer: bytearray = bytearray()
@@ -68,6 +70,7 @@ class GroqWhisperSTTService(FrameProcessor):
         self._task: asyncio.Task | None = None
         self._tracker = tracker
         self._speech_start: float = 0.0
+        self._lang_state = lang_state
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -97,12 +100,20 @@ class GroqWhisperSTTService(FrameProcessor):
     async def _transcribe(self, pcm: bytes) -> None:
         wav = _pcm_to_wav(pcm, self._sample_rate)
         t0 = time.perf_counter()
+
+        # Use the toggle language as a hint to Groq so STT is optimised for
+        # the expected script. Groq still auto-detects — this is just a hint.
+        active_lang = self._lang_state.lang if self._lang_state else None
+        kwargs: dict = {
+            "file": ("audio.wav", wav, "audio/wav"),
+            "model": GROQ_MODEL,
+            "response_format": "verbose_json",
+        }
+        if active_lang:
+            kwargs["language"] = active_lang
+
         try:
-            result = await self._client.audio.transcriptions.create(
-                file=("audio.wav", wav, "audio/wav"),
-                model=GROQ_MODEL,
-                response_format="verbose_json",  # returns detected language
-            )
+            result = await self._client.audio.transcriptions.create(**kwargs)
             if self._tracker:
                 self._tracker.stt = time.perf_counter() - t0
 
@@ -110,7 +121,8 @@ class GroqWhisperSTTService(FrameProcessor):
             if not text:
                 return
             lang = (getattr(result, "language", None) or "en").strip()
-            logger.info("Groq [%s]: %s", lang, text)
+            logger.info("Groq [toggle=%s detected=%s]: %s",
+                        (active_lang or "auto").upper(), lang.upper(), text)
 
             # [CONFIRM] TranscriptionFrame signature varies by pipecat version.
             try:
@@ -125,5 +137,5 @@ class GroqWhisperSTTService(FrameProcessor):
             logger.error("Groq STT error: %s", e)
 
 
-def create_stt(tracker=None) -> "GroqWhisperSTTService":
-    return GroqWhisperSTTService(tracker=tracker)
+def create_stt(tracker=None, lang_state: LanguageState | None = None) -> "GroqWhisperSTTService":
+    return GroqWhisperSTTService(tracker=tracker, lang_state=lang_state)
