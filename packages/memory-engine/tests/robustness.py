@@ -104,6 +104,12 @@ def test_beat3_add_fact_live():
     total = write_ms + query_ms
     print(f"  add-fact-live → write {write_ms:.0f}ms + query {query_ms:.0f}ms = {total:.0f}ms  grounded={d['grounded']}")
     assert total < 2000, f"add-fact-live total {total:.0f}ms — must be <2000ms"
+    assert d["grounded"], (
+        f"add-fact-live produced an unretrievable write — Moss upsert in "
+        f"/memory/write may have failed. response={d['answer_draft']!r}"
+    )
+    assert any(f"bibhuti_{suffix.lower()}" in (i.get("text") or "").lower() for i in d["items"]), \
+        f"Items don't contain the new person — got {[i['text'][:50] for i in d['items']]}"
 
 
 def test_beat3_capture_via_transcript():

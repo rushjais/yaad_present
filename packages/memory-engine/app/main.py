@@ -6,7 +6,7 @@ Real implementation wired in progressively through B1–B5.
 from __future__ import annotations
 
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Query
@@ -177,12 +177,84 @@ async def memory_temporal(req: MemoryQueryRequest):
 
 @app.post("/memory/write", response_model=MemoryWriteResponse)
 async def memory_write(req: MemoryWriteRequest):
+    """Caregiver-web add-fact-live path. Writes to Supabase AND upserts the
+    new chunk to Moss in the same request so the next /memory/query can find it.
+    Without this Moss step, add-fact-live silently doesn't work — DB has the row
+    but the voice agent can't see it. db.py's old comment ('triggered by caller')
+    documented the gap; this handler is the caller."""
     try:
         from .db import write_memory
         result = await write_memory(req.type.value, req.payload)
+
+        # Index in Moss so it's retrievable on the next query
+        try:
+            entity_type = req.type.value
+            ref = f"{entity_type}:{result['id']}"
+            text = _build_chunk_text(entity_type, req.payload)
+            if text:
+                from .moss_client import moss
+                await moss.upsert(ref, text, {
+                    "type": entity_type,
+                    "name": str(req.payload.get("name") or req.payload.get("title") or ""),
+                    "provenance": {
+                        "source": "caregiver_web",
+                        "added_by": "caregiver",
+                        "added_ts": datetime.now(timezone.utc).isoformat(),
+                    },
+                })
+                # Refresh graph entity-text cache so capture's entity resolution
+                # sees this new entity immediately.
+                try:
+                    from .graph import load_cache
+                    await load_cache(force=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass  # Moss failed — DB still has the row; reseed will pick it up
+
         return MemoryWriteResponse(**result)
     except Exception:
         return MemoryWriteResponse(id="fixture-id-" + str(int(time.time())))
+
+
+def _build_chunk_text(entity_type: str, payload: dict) -> str:
+    """Render a Moss chunk for a freshly-written entity. Matches the chunk
+    format in scripts/reseed_moss.py so search behaves consistently with
+    seed-time data. Edges aren't known at write-time, so relationship phrases
+    aren't included — the next reseed picks those up if Track C adds edges.
+    """
+    name = (payload.get("name") or payload.get("title") or "").strip()
+    notes = (payload.get("notes") or "").strip()
+
+    if entity_type == "person":
+        relationship = (payload.get("relationship") or "").strip()
+        aliases = payload.get("aliases") or []
+        parts = [name]
+        if relationship:
+            parts.append(relationship)
+        if notes:
+            parts.append(notes)
+        if aliases:
+            parts.append(f"Also called {', '.join(aliases)}.")
+        return ". ".join(s.rstrip(".") for s in parts if s) + "."
+
+    if entity_type == "place":
+        return f"{name}. {notes}".strip().rstrip(".") + "."
+
+    if entity_type == "medication":
+        return f"{name} — Amma's medication. {notes}".strip().rstrip(".") + "."
+
+    if entity_type == "event":
+        return f"{name}. {notes}".strip().rstrip(".") + "."
+
+    if entity_type == "story":
+        return f"Story: {notes or name}"
+
+    if entity_type == "episode":
+        return f"{payload.get('summary') or notes or name}".strip()
+
+    # med_log doesn't need a chunk (queried via Supabase by temporal)
+    return ""
 
 
 @app.post("/memory/capture", response_model=MemoryCaptureResponse)
