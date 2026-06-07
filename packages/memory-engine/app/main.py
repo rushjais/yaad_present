@@ -10,11 +10,12 @@ import time
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, File, Query, UploadFile
 
 from .schemas import (
     EntityType,
     HealthResponse,
+    IngestDocumentResponse,
     LocationPingRequest,
     LocationPingResponse,
     LocationAction,
@@ -422,6 +423,26 @@ async def vision_recognize(req: VisionRecognizeRequest):
         return await recognize(req.image_b64)
     except Exception:
         return FIXTURE_VISION
+
+
+@app.post("/ingest/document", response_model=IngestDocumentResponse)
+async def ingest_document(file: UploadFile = File(...)):
+    """Upload a medical PDF → Unsiloed parses → Groq normalizes → records are
+    written to Supabase + Moss and immediately queryable. Sponsor beat
+    (§18: 'Unsiloed = ingest a medical doc into structured memory').
+    """
+    try:
+        from .ingest import ingest_document as _ingest
+        file_bytes = await file.read()
+        result = await _ingest(
+            file_bytes,
+            file.filename or "document.pdf",
+            file.content_type or "application/pdf",
+        )
+        return IngestDocumentResponse(**result)
+    except Exception as e:
+        print(f"[ingest] failed: {e!r}")
+        return IngestDocumentResponse(created_refs=[], summary="", raw_extraction="")
 
 
 @app.get("/health", response_model=HealthResponse)

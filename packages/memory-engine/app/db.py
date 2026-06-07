@@ -45,13 +45,14 @@ TABLE_MAP = {
 
 async def write_memory(entity_type: str, payload: dict[str, Any]) -> dict:
     row_id = str(uuid.uuid4())
+    # Pop provenance hints BEFORE spreading payload — otherwise they leak in
+    # as columns and Supabase rejects the row (PGRST204).
+    source = payload.pop("source", "caregiver_web")
+    added_by = payload.pop("added_by", "caregiver")
     row = {
         "id": row_id,
         **payload,
-        "provenance": _provenance(
-            source=payload.pop("source", "caregiver_web"),
-            added_by=payload.pop("added_by", "caregiver"),
-        ),
+        "provenance": _provenance(source=source, added_by=added_by),
     }
     table = TABLE_MAP.get(entity_type)
     if not table:

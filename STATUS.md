@@ -22,9 +22,12 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - **Heads-up from Track B:** B7 `items[]` may contain graph-expanded neighbors with derived text — treat `items[].text` as authoritative, do NOT reparse. Intent-routed responses may take ~200ms on LLM fallback; speculative fire on partial transcript handles this.
 
 ### Track B — Memory (Keshav)
-- Phase: **B7.1 — Chunks + τ simplification complete (2026-06-06)** ✅
-  - See `MEMORY_V2_README.md` for the teammate-facing summary of what changed and why.
-- 43/43 tests green: 15 smoke + 28 robustness, p95 = 22ms.
+- Phase: **B7.2 — category enrichment + rewrite fallback complete (2026-06-06)** ✅
+  - See `MEMORY_V2_README.md` for B7.1 background; `packages/memory-engine/CLAUDE.md` for the B7.2 details.
+- 39/39 robustness green (added beat 6: abstract preferences). All 5 demo beats + the new preference beat ground correctly; anti-confab cases all safe-refuse.
+- **B7.2 (2026-06-06):** fixed "favorite music" → safe-refusal regression. Two layers: (1) seed-time chunk enrichment via Groq 8b labels each preference with its category as natural prose ("Music: Amma listens to Bollywood songs from the 1960s. Drinks: jasmine tea. Activities: Lullwater Park walk"), cached in `fixtures/enriched_chunks.json` so server startup pays 0 LLM cost; (2) runtime query-rewrite fallback in `app/retrieval.py` fires only when first-pass returns 0 above τ — entity-anchored, same τ on rescue path, and the rewrite Groq prompt doubles as an anti-confab gate (returns `[]` for general-knowledge queries like president/Mars/2+2). Adversarial preference queries that semantically resemble enriched chunks ("favorite color", "horror movies") slip past τ at the memory layer — voice-agent grounding prompt is the final anti-confab gate, not a stopword filter. Latency unchanged on happy path; rewrite fallback adds ~300ms only when fired.
+- **Unsiloed ingestion shipped (2026-06-06):** new `POST /ingest/document` endpoint. Upload a medical PDF → Unsiloed parses → Groq normalizes into typed Yaad records → write_memory + Moss upsert. Smoke test (`scripts/smoke_unsiloed.py`) extracts Aspirin + Metoprolol + Dr. Patel + follow-up appointment from a synthetic discharge summary and they're queryable on the next turn. Earns the §18 Unsiloed sponsor checkbox. Field-name quirks logged in `app/unsiloed.py` (multipart field is `document`, form field is `message`).
+- **Bug fixed in passing:** `db.write_memory` was popping `source`/`added_by` AFTER `**payload` spread, so any caller passing those keys hit PGRST204. Pre-existing latent bug; surfaced by ingest, fixed by popping before spread. No existing call sites affected.
 - Pitch language updated: dropped "memory graph" framing → **"a living memory that lives inside the agent"** (instant updates, on-device, sub-10ms).
 - **What changed in v2:**
   1. Killed graph expansion + relational-walk + 4-layer guards. Single hard τ=0.82 relevance gate.
@@ -56,12 +59,12 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 |---|---|---|
 | Moss | ✅ LIVE | SessionIndex connected, sub-10ms, index populated |
 | Supabase | ✅ LIVE | All 12 tables exist, seeded. URL + key in `.env`. |
-| Groq | ✅ LIVE | 16 models. Use for LLM (`llama-3.3-70b-versatile`) and STT (`whisper-large-v3`). |
+| Groq | ⚠ LIVE w/ quota tight | 16 models. Use for LLM (`llama-3.3-70b-versatile`) and STT (`whisper-large-v3`). **2026-06-06: hit 100k TPD on 70b**; rewrite + enrichment moved to `llama-3.1-8b-instant` (separate quota). Reseed enrichment is serialized w/ 0.4s pause to stay under 8b's 6000 TPM. Upgrade to Dev Tier before demo if running multiple test cycles. |
 | MiniMax TTS | ✅ LIVE | Track A confirmed `api.minimax.io` (status_code=0, 29KB MP3). Track B docs recommend `api.minimaxi.chat`. Both work; code uses `api.minimax.io`. Model: `speech-02-hd`. |
 | Twilio | ✅ LIVE | Account active. SMS fires with current keys. |
 | LiveKit | ✅ LIVE | Connected to `wss://keepsake-y39026vu.livekit.cloud`, room `yaad-demo` confirmed. |
 | TrueFoundry | ✅ LIVE | `gateway.truefoundry.ai`, model `openai/gpt-4o-mini`. Confirmed by Track A. |
-| Unsiloed | ✅ LIVE | Base: `https://platformbackend.unsiloed.ai`. Auth: `Api-Key` header. Upload: multipart `POST /api/v1/playground/upload-document`. Query: form-data `POST /api/v1/playground/chat-with-document`. Tested: extracted "Aspirin 100mg daily at 8am" from test PDF. |
+| Unsiloed | ✅ LIVE & WIRED | Base: `https://platformbackend.unsiloed.ai`. Auth: `Api-Key` header. Upload field: multipart `document` (NOT `file`). Chat field: form-data `message` (NOT `question`). Wired into memory engine via `POST /ingest/document` — see `app/unsiloed.py` + `app/ingest.py`. End-to-end smoke green: discharge PDF → 2 meds + 1 event + 2 persons + 1 story → all queryable. |
 | Deepgram | ❌ NO KEY | Using Groq Whisper instead. No action needed. |
 | OpenAI | ❌ NO KEY | Optional — vision only. Skip for now. |
 

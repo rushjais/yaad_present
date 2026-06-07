@@ -107,10 +107,23 @@ async def query_memory(text: str, lang: str = "en") -> dict:
     raw = await moss.query(text, top_k=8, lang=lang)
     survivors = [h for h in raw if float(h.get("score", 0.0)) >= TAU]
 
-    # Bail before expansion: if NOTHING cleared τ, this is off-topic. Don't
-    # let expansion lower the bar.
+    # B7.2 — Query-rewrite fallback. If nothing cleared τ, this MIGHT be an
+    # abstract category query ("favorite music") where the underlying fact
+    # lives in prose that doesn't share embedding surface. Try ONE rewrite
+    # pass via Groq, entity-anchored if intent has named entities, then
+    # safe-refuse if still empty. Single retry, no cascading.
+    #
+    # Adversarial queries that semantically resemble enriched chunks
+    # ("favorite color", "what sport") are NOT filtered here — they pass
+    # through to the voice agent, whose grounding system prompt ("state ONLY
+    # facts in the provided MEMORY context") is the real anti-confab gate.
+    # We tried a deterministic stopword/content-word filter — too brittle.
     if not survivors:
-        return _refused(safe_refusal(lang))
+        rescued = await _rewrite_and_retry(text, intent, lang)
+        if rescued:
+            survivors = rescued
+        else:
+            return _refused(safe_refusal(lang))
 
     # Optional one-hop query expansion: if the user mentioned multiple
     # entities and one isn't represented, fire a 2nd Moss query for it.
@@ -162,3 +175,111 @@ async def _expand_for_missing_entities(entities: list[str],
 
     out.sort(key=lambda h: float(h.get("score", 0.0)), reverse=True)
     return out
+
+
+# ---------------------------------------------------------------------------
+# B7.2 — Query-rewrite fallback
+# ---------------------------------------------------------------------------
+
+_REWRITE_SYSTEM = """You help a memory system retrieve facts about Amma (an elderly grandmother)
+and her family. The user's query failed because it asks about a category
+("favorite music", "her hobbies") while the facts are stored as specifics
+("Bollywood songs from the 1960s", "plays chess"). Your job: generate 3
+alternative phrasings that bridge that gap — OR refuse if the query is
+unrelated to her life.
+
+Return STRICT JSON: {"queries": ["...", "...", "..."]}
+If the query is clearly general knowledge or about something outside her
+life, return {"queries": []} — DO NOT make up an Amma-shaped version of it.
+
+REFUSE (return []) when the query is about:
+- General knowledge (politics, math, geography, celebrities, news)
+- Things Amma has no relationship to (random sports teams, brands, weather)
+- A person, pet, or thing not named in the original query
+  Example: "Who is my dog?" → []  (no dog mentioned in her life, and you
+  must not invent one)
+
+REWRITE when the query is plausibly about her life or someone in it:
+- Each variant should approach the question from a different angle
+  (literal synonym, descriptive paraphrase, related concept).
+- Variants MUST NOT introduce entities that aren't in the original query.
+  Don't add "Amma" or any person's name unless the user already said it.
+  Example: "favorite music" → ["music she loves", "songs she enjoys",
+                               "what she listens to"]
+  NOT:    "favorite music" → ["Amma's favorite music", ...]
+- If the original named a person (e.g. "Leo"), every variant MUST include
+  that name. Example: "what does Leo like?" →
+    ["things Leo enjoys", "Leo's hobbies", "Leo's interests"]
+- Keep each variant short — 2-6 words is ideal."""
+
+
+async def _rewrite_and_retry(text: str, intent, lang: str) -> list[dict]:
+    """One-shot rescue path: ask Groq for 3 alternative phrasings, fire them
+    in parallel against Moss, union anything above τ_EXPANSION. Returns the
+    deduped above-threshold hits, or [] if still empty.
+
+    Entity-anchored: if intent.entities is set, the rewrite prompt is told
+    every variant MUST include at least one entity name. Prevents the
+    fallback from drifting onto the wrong person.
+    """
+    from .config import settings
+    from .moss_client import moss
+
+    if not settings.groq_api_key:
+        return []
+
+    user_prompt = f"Original query: {text!r}"
+    if intent.entities:
+        user_prompt += f"\nEntities mentioned (must appear in every rephrasing): {intent.entities}"
+
+    variants: list[str] = []
+    try:
+        import json
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=settings.groq_api_key)
+        # Use 8b: rewrite is a simple paraphrase task, doesn't need 70b's
+        # reasoning, and the 8b daily quota is separate so we stay live even
+        # when the 70b TPD is exhausted (real failure mode on 2026-06-06).
+        resp = await client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": _REWRITE_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=200,
+        )
+        data = json.loads(resp.choices[0].message.content or "{}")
+        variants = [v.strip() for v in (data.get("queries") or []) if isinstance(v, str) and v.strip()]
+        variants = variants[:3]
+    except Exception as e:
+        print(f"[rewrite] Groq failed: {e!r}")
+        return []
+
+    if not variants:
+        return []
+
+    import asyncio
+    raw_batches = await asyncio.gather(
+        *[moss.query(v, top_k=4, lang=lang) for v in variants],
+        return_exceptions=True,
+    )
+
+    # Use the SAME τ as first-pass. A laxer threshold here was the original
+    # false-positive vector (adversarial queries getting rescued at 0.78).
+    merged: dict[str, dict] = {}
+    for batch in raw_batches:
+        if isinstance(batch, Exception):
+            continue
+        for h in batch:
+            if float(h.get("score", 0.0)) < TAU:
+                continue
+            existing = merged.get(h["id"])
+            if existing is None or float(h["score"]) > float(existing["score"]):
+                merged[h["id"]] = h
+
+    survivors = sorted(merged.values(), key=lambda h: float(h["score"]), reverse=True)
+    if survivors:
+        print(f"[rewrite] rescued {len(survivors)} hits via {variants!r}")
+    return survivors

@@ -40,8 +40,11 @@ GET  /memory/timeline  ?date=           → {blocks:TimelineBlock[]}
 GET  /reminders/due    ?ts=             → {due:[{kind, text, ref}]}
 POST /location/ping    {lat, lng}       → {inside_zone, nearest_place, action, reassurance_text?, contacts?}
 POST /vision/recognize {image_b64}      → {match:RetrievedItem|null, answer_draft}
+POST /ingest/document  (multipart file) → {created_refs[], summary, raw_extraction}
 GET  /health                            → {moss_ok, db_ok, latency_ms}
 ```
+
+`/ingest/document` is **additive** (added 2026-06-06, Unsiloed sponsor beat) — v1 contract preserved, no breaking change for Tracks A or C.
 
 ## RetrievedItem shape
 ```json

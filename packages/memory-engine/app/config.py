@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # OpenAI — vision fallback (optional)
     openai_api_key: str = ""
 
+    # Unsiloed — document ingestion (medical PDFs)
+    unsiloed_api_key: str = ""
+    unsiloed_base_url: str = "https://platformbackend.unsiloed.ai"
+
     confidence_threshold: float = 0.45  # τ — below this → safe refusal
 
     # retrieval scoring weights
@@ -44,6 +48,7 @@ class Settings(BaseSettings):
         "groq_api_key", "truefoundry_api_key", "truefoundry_base_url",
         "minimax_api_key", "minimax_group_id",
         "openai_api_key",
+        "unsiloed_api_key", "unsiloed_base_url",
         mode="before",
     )
     @classmethod
