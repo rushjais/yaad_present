@@ -28,9 +28,23 @@ For someone with dementia, a generic assistant is dangerous if it invents detail
 
 The demo persona is **Amma**, 84: grandson Leo, daughter Sarah, home, Lullwater Park, medication routines, visits, preferences, stories, and safety context.
 
+### Moss Usage
+
+Moss is central to Yaad’s retrieval path. It is used where vector retrieval is strongest and most useful in conversation:
+
+- Indexed: `stories.text`, `episodes(kind='captured_fact').summary`
+- Also fed by write-through updates so new conversational memory is available immediately
+- Kept alongside Supabase so canonical rows remain the source of truth
+- Startup reseed repopulates the in-process Moss session from Supabase
+- `/memory/write` upserts relevant new content immediately
+
+This keeps Moss as the fast recall layer for semantic memory while Supabase remains the canonical source of truth for exact facts.
+
+---
+
 ## The Memory Engine
 
-The memory engine is where the magic is. We noticed Moss works locally, allowing for unique frameworks. Our system needs **instant retrieval from our own framework, not the web**, and Moss lets us make that distinction. Built around **archetype separation**, we separate data into streams in our database, so that different functional information is sorted and retrieved in different processes. The router chooses the right substrate before retrieving. This avoids the common RAG failure mode where everything is a vector query and nearest-neighbor text is treated as truth.
+The memory engine is where the magic is. We didn't just integrate Moss; we made a framework built to complement it. By taking advantage of Moss's ability to work locally, we created a knowledge graph equipped with filtering and semantic preferences that amplify everything Moss was built for: low latency, retrieval, and accurate results. Our system needs **instant retrieval from our own framework, not the web**, and Moss lets us make that distinction. Built around **archetype separation**, we separate data into streams in our database, so that different functional information is sorted and retrieved in different processes. The router chooses the right substrate before retrieving. This avoids the common RAG failure mode where everything is a vector query and nearest-neighbor text is treated as truth.
 
 ---
 
@@ -132,19 +146,7 @@ The most important part: the memory source refuses to hallucinate. If it can't m
 
 A follow-up can be logged for the caregiver, but the answer itself stays grounded. Yaad lets the family handle the obscure. AI can only help when it's sure.
 
-### Moss Usage
 
-Moss is central to Yaad’s retrieval path. It is used where vector retrieval is strongest and most useful in conversation:
-
-- Indexed: `stories.text`, `episodes(kind='captured_fact').summary`
-- Also fed by write-through updates so new conversational memory is available immediately
-- Kept alongside Supabase so canonical rows remain the source of truth
-- Startup reseed repopulates the in-process Moss session from Supabase
-- `/memory/write` upserts relevant new content immediately
-
-This keeps Moss as the fast recall layer for semantic memory while Supabase remains the canonical source of truth for exact facts.
-
----
 
 ## Voice Pipeline
 
