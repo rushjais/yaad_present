@@ -113,11 +113,12 @@ def _deliver_sms(contacts: list[dict], body: str) -> list[dict]:
     return results
 
 
-async def send_unanswered_alert(query_text: str, contacts: list[dict]) -> list[dict]:
-    """Text caregivers when Yaad can't answer Amma's question so they can add the info."""
+async def send_unanswered_alert(query_text: str, contacts: list[dict]) -> tuple[str, list[dict]]:
+    """Text caregivers when Yaad can't answer Amma's question so they can add the info.
+    Returns (formatted_body, sms_results)."""
     from .config import settings
     body = await _format_unanswered(query_text, settings.openai_api_key)
-    return _deliver_sms(contacts, body)
+    return body, _deliver_sms(contacts, body)
 
 
 def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:

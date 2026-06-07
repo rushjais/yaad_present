@@ -41,7 +41,7 @@ export default function TimelinePage() {
   useEffect(() => { load(date); }, [date, load]);
 
   return (
-    <div className="max-w-2xl">
+    <div className="w-full">
       <h1 className="text-2xl font-semibold mb-1">Timeline</h1>
       <p className="text-stone-500 text-sm mb-6">
         Amma&apos;s day in order — meds, events, moments.

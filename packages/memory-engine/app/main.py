@@ -56,12 +56,26 @@ def _maybe_fixture(exc: Exception, fixture: Any) -> Any:
 async def _alert_unanswered(query_text: str) -> None:
     """Background task: text caregivers when the memory engine can't answer Amma."""
     try:
-        from .db import fetch_reassurance_contacts
+        from .db import fetch_reassurance_contacts, store_alert
         from .location import send_unanswered_alert
         contacts = await fetch_reassurance_contacts()
-        if contacts:
-            results = await send_unanswered_alert(query_text, contacts)
-            print(f"[unanswered_alert] sent for '{query_text[:60]}': {results}")
+        if not contacts:
+            return
+        body, results = await send_unanswered_alert(query_text, contacts)
+        print(f"[unanswered_alert] sent for '{query_text[:60]}': {results}")
+        # Persist so Safety page can show what was sent
+        ok_count = sum(1 for r in results if r.get("ok"))
+        if ok_count:
+            from .db import store_interaction
+            await store_interaction({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "lang": "en",
+                "query": query_text,
+                "response": body,
+                "retrieved_refs": [],
+                "grounded": False,
+                "confidence": 0.0,
+            })
     except Exception as e:
         print(f"[unanswered_alert] failed: {e!r}")
 

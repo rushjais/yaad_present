@@ -61,7 +61,7 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="max-w-2xl">
+    <div className="w-full">
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         {health && (
@@ -75,116 +75,126 @@ export default function DashboardPage() {
         What&apos;s on today and what to talk about with Amma.
       </p>
 
-      {/* Priority — LLM-ranked */}
-      <section className="mb-8">
-        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-1">
-          Caregiver priorities
-        </h2>
-        <p className="text-xs text-stone-400 mb-3">Ranked by importance — health first, then family.</p>
-        {priorityLoading ? (
-          <p className="text-stone-400 text-sm">Thinking…</p>
-        ) : priority.length === 0 ? (
-          <p className="text-stone-400 text-sm">Nothing to prioritise right now.</p>
-        ) : (
-          <ol className="flex flex-col gap-2">
-            {priority.map((item, i) => (
-              <li
-                key={i}
-                className="flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3"
-              >
-                <span className="text-xs font-bold text-stone-400 w-4 shrink-0 mt-0.5">{i + 1}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-stone-900">{item.title}</p>
-                  <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">{item.reason}</p>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 mt-0.5 ${KIND_COLOR[item.kind] ?? "bg-stone-100 text-stone-600"}`}>
-                  {item.kind.replace("_", " ")}
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-      {/* Today's reminders */}
-      <section className="mb-8">
-        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
-          Today&apos;s reminders
-        </h2>
-        {loading ? (
-          <p className="text-stone-400 text-sm">Loading…</p>
-        ) : reminders.length === 0 ? (
-          <p className="text-stone-400 text-sm">Nothing due right now.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {reminders.map((r, i) => (
-              <li
-                key={i}
-                className="flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3"
-              >
-                <span className={`mt-0.5 text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
-                  r.kind === "medication" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-                }`}>
-                  {r.kind}
-                </span>
-                <span className="text-sm text-stone-800">{r.text}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        {/* Left column */}
+        <div className="flex flex-col gap-8">
+          {/* Priority — LLM-ranked */}
+          <section>
+            <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-1">
+              Caregiver priorities
+            </h2>
+            <p className="text-xs text-stone-400 mb-3">Ranked by importance — health first, then family.</p>
+            {priorityLoading ? (
+              <p className="text-stone-400 text-sm">Thinking…</p>
+            ) : priority.length === 0 ? (
+              <p className="text-stone-400 text-sm">Nothing to prioritise right now.</p>
+            ) : (
+              <ol className="flex flex-col gap-2">
+                {priority.map((item, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3"
+                  >
+                    <span className="text-xs font-bold text-stone-400 w-4 shrink-0 mt-0.5">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-stone-900">{item.title}</p>
+                      <p className="text-xs text-stone-500 mt-0.5 leading-relaxed">{item.reason}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 mt-0.5 ${KIND_COLOR[item.kind] ?? "bg-stone-100 text-stone-600"}`}>
+                      {item.kind.replace("_", " ")}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
 
-      {/* Upcoming this week */}
-      <section className="mb-8">
-        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
-          Upcoming this week
-        </h2>
-        {loading ? (
-          <p className="text-stone-400 text-sm">Loading…</p>
-        ) : upcoming.length === 0 ? (
-          <p className="text-stone-400 text-sm">No events in the next 7 days.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {upcoming.map((e) => (
-              <li
-                key={e.id}
-                className="flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-stone-900">{e.title}</p>
-                  <p className="text-xs text-stone-400 mt-0.5">
-                    {new Date(e.start_ts).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
-                    {" · "}
-                    {new Date(e.start_ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </p>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 mt-0.5 ${KIND_COLOR[e.kind] ?? "bg-stone-100 text-stone-600"}`}>
-                  {e.kind.replace("_", " ")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Topics to reinforce */}
-      <section>
-        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
-          Topics to reinforce
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-          {TOPICS.map((t) => (
-            <div
-              key={t.name}
-              className="rounded-lg border border-stone-200 bg-white px-4 py-3"
-            >
-              <p className="text-sm font-medium text-stone-900">{t.name}</p>
-              <p className="text-xs text-stone-400 mb-2">{t.sub}</p>
-              <p className="text-xs text-stone-600 leading-relaxed">{t.prompt}</p>
-            </div>
-          ))}
+          {/* Today's reminders */}
+          <section>
+            <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
+              Today&apos;s reminders
+            </h2>
+            {loading ? (
+              <p className="text-stone-400 text-sm">Loading…</p>
+            ) : reminders.length === 0 ? (
+              <p className="text-stone-400 text-sm">Nothing due right now.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {reminders.map((r, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3"
+                  >
+                    <span className={`mt-0.5 text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                      r.kind === "medication" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {r.kind}
+                    </span>
+                    <span className="text-sm text-stone-800">{r.text}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
-      </section>
+
+        {/* Right column */}
+        <div className="flex flex-col gap-8">
+          {/* Upcoming this week */}
+          <section>
+            <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
+              Upcoming this week
+            </h2>
+            {loading ? (
+              <p className="text-stone-400 text-sm">Loading…</p>
+            ) : upcoming.length === 0 ? (
+              <p className="text-stone-400 text-sm">No events in the next 7 days.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {upcoming.map((e) => (
+                  <li
+                    key={e.id}
+                    className="flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-stone-900">{e.title}</p>
+                      <p className="text-xs text-stone-400 mt-0.5">
+                        {new Date(e.start_ts).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+                        {" · "}
+                        {new Date(e.start_ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 mt-0.5 ${KIND_COLOR[e.kind] ?? "bg-stone-100 text-stone-600"}`}>
+                      {e.kind.replace("_", " ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Topics to reinforce */}
+          <section>
+            <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
+              Topics to reinforce
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              {TOPICS.map((t) => (
+                <div
+                  key={t.name}
+                  className="rounded-lg border border-stone-200 bg-white px-4 py-3"
+                >
+                  <p className="text-sm font-medium text-stone-900">{t.name}</p>
+                  <p className="text-xs text-stone-400 mb-2">{t.sub}</p>
+                  <p className="text-xs text-stone-600 leading-relaxed">{t.prompt}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+      </div>
     </div>
   );
 }

@@ -159,7 +159,7 @@ export default function MemoriesPage() {
   }
 
   return (
-    <div className="max-w-lg">
+    <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-semibold mb-1">Add Memory</h1>
       <p className="text-stone-500 text-sm mb-6">
         New facts are searchable by Amma&apos;s voice companion instantly.
