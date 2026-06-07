@@ -1,5 +1,29 @@
 import Link from "next/link";
 
+function MicIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0014 0" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+      <line x1="9" y1="22" x2="15" y2="22" />
+    </svg>
+  );
+}
+
+function DashboardIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg)" }}>
@@ -31,16 +55,28 @@ export default function LandingPage() {
           bilingual in Hindi and English, always up to date.
         </p>
 
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-2 rounded-full px-8 py-3.5 text-base font-semibold text-white transition-all hover:opacity-90 active:scale-95"
-          style={{ background: "var(--brand)" }}
-        >
-          Open care dashboard
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-          </svg>
-        </Link>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full max-w-sm">
+          {/* Patient side */}
+          <Link
+            href="/voice"
+            className="flex-1 inline-flex flex-col items-center gap-1 rounded-2xl px-6 py-5 text-white transition-all hover:opacity-90 active:scale-95 shadow-lg"
+            style={{ background: "var(--brand)" }}
+          >
+            <MicIcon />
+            <span className="text-base font-semibold mt-1">Talk to Yaad</span>
+            <span className="text-xs opacity-70 font-normal">Patient</span>
+          </Link>
+
+          {/* Caregiver side */}
+          <Link
+            href="/dashboard"
+            className="flex-1 inline-flex flex-col items-center gap-1 rounded-2xl px-6 py-5 text-stone-700 border-2 border-stone-200 bg-white transition-all hover:border-amber-300 hover:shadow-md active:scale-95"
+          >
+            <DashboardIcon />
+            <span className="text-base font-semibold mt-1">Care Dashboard</span>
+            <span className="text-xs text-stone-400 font-normal">Caregiver</span>
+          </Link>
+        </div>
 
         {/* Feature pills */}
         <div className="flex flex-wrap items-center justify-center gap-3 mt-10">

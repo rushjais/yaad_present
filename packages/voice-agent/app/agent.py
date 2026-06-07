@@ -32,6 +32,7 @@ from pipecat.frames.frames import (  # type: ignore
     Frame,
     TextFrame,
     TranscriptionFrame,
+    VADUserStartedSpeakingFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline  # type: ignore
 from pipecat.pipeline.runner import PipelineRunner  # type: ignore
@@ -273,13 +274,27 @@ class MemoryContextProcessor(FrameProcessor):
 # ---------------------------------------------------------------------------
 
 _SENTENCE_ENDS = {".", "!", "?", "…"}
+# Flush on clause-internal punctuation once we have enough text so TTS starts
+# speaking the first clause while the LLM is still generating the rest.
+_CLAUSE_ENDS = {",", ";", ":"}
+_CLAUSE_MIN_LEN = 50  # characters
 
 
 class SentenceAggregator(FrameProcessor):
-    """Buffer streaming TextFrames; flush on sentence-ending punctuation."""
+    """Buffer streaming TextFrames; flush on sentence or long-clause boundaries.
+
+    Also discards any stale buffer when a new user turn starts, preventing
+    leftover text from a previous (unpunctuated) LLM response from being
+    prepended to the next turn's audio.
+    """
 
     def __init__(self) -> None:
         super().__init__()
+        self._buf = ""
+
+    async def _flush(self) -> None:
+        if self._buf.strip():
+            await self.push_frame(TextFrame(self._buf.strip()))
         self._buf = ""
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
@@ -287,13 +302,18 @@ class SentenceAggregator(FrameProcessor):
 
         if isinstance(frame, TextFrame):
             self._buf += frame.text
-            if self._buf.rstrip() and self._buf.rstrip()[-1] in _SENTENCE_ENDS:
-                await self.push_frame(TextFrame(self._buf.strip()))
-                self._buf = ""
+            tail = self._buf.rstrip()
+            if tail and tail[-1] in _SENTENCE_ENDS:
+                await self._flush()
+            elif tail and tail[-1] in _CLAUSE_ENDS and len(self._buf) >= _CLAUSE_MIN_LEN:
+                await self._flush()
+        elif isinstance(frame, VADUserStartedSpeakingFrame):
+            # New user turn — discard any stale buffer from the previous response
+            # so its tail doesn't get spoken while the user is already talking.
+            self._buf = ""
+            await self.push_frame(frame, direction)
         elif isinstance(frame, EndFrame):
-            if self._buf.strip():
-                await self.push_frame(TextFrame(self._buf.strip()))
-                self._buf = ""
+            await self._flush()
             await self.push_frame(frame, direction)
         else:
             await self.push_frame(frame, direction)
@@ -339,7 +359,7 @@ async def run_agent(room_name: str) -> None:
     pipeline, memory_client, lang_state = _build_pipeline(transport)
     start_lang_listener(lang_state)
 
-    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=False))
+    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
     reminder_queue: asyncio.Queue = asyncio.Queue()
     asyncio.create_task(poll_reminders(reminder_queue))
 
@@ -355,7 +375,7 @@ async def run_agent_local() -> None:
     pipeline, memory_client, lang_state = _build_pipeline(transport)
     start_lang_listener(lang_state)
 
-    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=False))
+    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
     reminder_queue: asyncio.Queue = asyncio.Queue()
     asyncio.create_task(poll_reminders(reminder_queue))
 

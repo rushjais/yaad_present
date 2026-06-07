@@ -10,13 +10,11 @@ Language detection: checks for Devanagari characters in the response text.
   If it returns 1004/wrong voice, override MINIMAX_VOICE_HI in .env.
 """
 
-import io
 import logging
 import os
 import time
 
 import httpx
-from pydub import AudioSegment  # requires: brew install ffmpeg
 
 from pipecat.frames.frames import (  # type: ignore
     Frame,
@@ -34,18 +32,11 @@ MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "English_Graceful_Lady").s
 MINIMAX_VOICE_HI = os.environ.get("MINIMAX_VOICE_HI", "Wise_Woman").strip()  # [CONFIRM] on .io
 MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-02-hd").strip()
 MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"  # NO GroupId — .io international endpoint
-OUTPUT_SAMPLE_RATE = 32000
+OUTPUT_SAMPLE_RATE = 24000  # MiniMax native PCM rate; no ffmpeg needed
 
 
 def _contains_devanagari(text: str) -> bool:
-    """Detect Hindi by Devanagari Unicode block (U+0900–U+097F)."""
     return any(0x0900 <= ord(c) <= 0x097F for c in text)
-
-
-def _mp3_to_pcm(mp3_bytes: bytes) -> bytes:
-    audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
-    audio = audio.set_frame_rate(OUTPUT_SAMPLE_RATE).set_channels(1).set_sample_width(2)
-    return audio.raw_data
 
 
 class MiniMaxTTSService(FrameProcessor):
@@ -64,6 +55,16 @@ class MiniMaxTTSService(FrameProcessor):
                 "MINIMAX_API_KEY is empty — set it in packages/voice-agent/.env. "
                 "Agent cannot start without a TTS key."
             )
+
+        # Persistent HTTP client: reuses the TCP+TLS connection to api.minimax.io
+        # instead of opening a new one per request. Saves ~150-300ms per TTS call.
+        self._http = httpx.AsyncClient(
+            timeout=15.0,
+            headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
+        )
+
+    async def cleanup(self) -> None:
+        await self._http.aclose()
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -99,19 +100,13 @@ class MiniMaxTTSService(FrameProcessor):
             "voice_setting": {"voice_id": voice_id, "speed": 1, "vol": 1, "pitch": 0},
             "audio_setting": {
                 "sample_rate": OUTPUT_SAMPLE_RATE,
-                "bitrate": 128000,
-                "format": "mp3",
+                "format": "pcm",   # raw 16-bit signed PCM — no ffmpeg needed
                 "channel": 1,
             },
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(
-                MINIMAX_URL,
-                headers={"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"},
-                json=payload,
-            )
-            r.raise_for_status()
-            data = r.json()
+        r = await self._http.post(MINIMAX_URL, json=payload)
+        r.raise_for_status()
+        data = r.json()
 
         base = data.get("base_resp", {})
         if base.get("status_code") != 0:
@@ -123,4 +118,4 @@ class MiniMaxTTSService(FrameProcessor):
         audio_hex = (data.get("data") or {}).get("audio", "")
         if not audio_hex:
             raise ValueError(f"No audio in MiniMax response. Keys: {list(data.keys())}")
-        return _mp3_to_pcm(bytes.fromhex(audio_hex))
+        return bytes.fromhex(audio_hex)  # raw 16-bit signed PCM at OUTPUT_SAMPLE_RATE

@@ -10,6 +10,8 @@
     "generate-types": "npx openapi-typescript ../../packages/shared/contract.openapi.json -o lib/types.ts"
   },
   "dependencies": {
+    "livekit-client": "^2.19.1",
+    "livekit-server-sdk": "^2.15.4",
     "next": "15.3.3",
     "openai": "^6.42.0",
     "react": "^19.0.0",

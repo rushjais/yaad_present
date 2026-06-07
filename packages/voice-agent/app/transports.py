@@ -18,14 +18,11 @@ from livekit.api import AccessToken, VideoGrants  # type: ignore
 
 
 def create_vad() -> SileroVADAnalyzer:
-    # min_volume=0.3: default 0.6 is too high for AirPods/Bluetooth mics whose
-    # PCM amplitude runs lower than built-in mics — utterances were silently dropped.
-    # stop_secs=0.8: default 0.2 cuts off mid-sentence on any brief pause.
     return SileroVADAnalyzer(params=VADParams(
-        confidence=0.75,
-        start_secs=0.2,
-        stop_secs=0.8,
-        min_volume=0.6,
+        confidence=0.7,
+        start_secs=0.1,
+        stop_secs=2.0,
+        min_volume=0.2,
     ))
 
 
@@ -34,7 +31,8 @@ def _make_token(room_name: str) -> str:
         AccessToken(os.environ["LIVEKIT_API_KEY"], os.environ["LIVEKIT_API_SECRET"])
         .with_identity("yaad-agent")
         .with_name("Yaad")
-        .with_grants(VideoGrants(room_join=True, room=room_name))
+        .with_grants(VideoGrants(room_join=True, room=room_name,
+                                  can_publish=True, can_subscribe=True))
         .to_jwt()
     )
 
