@@ -40,6 +40,7 @@ export default function MemoriesPage() {
   // Medical records state
   const [pdfFile,      setPdfFile]      = useState<File | null>(null);
   const [ingestResult, setIngestResult] = useState<{ summary: string; created_refs: string[] } | null>(null);
+  const [ingestStage,  setIngestStage]  = useState("");
 
   function switchTab(t: Tab) {
     setTab(t);
@@ -74,18 +75,37 @@ export default function MemoriesPage() {
     setStatus("loading");
     setErrMsg("");
     setIngestResult(null);
+
+    // Stage labels — Unsiloed upload + index takes ~30-60s externally, show progress
+    const stages = [
+      "Uploading document…",
+      "Indexing content — this takes about 30 seconds…",
+      "Extracting medications and appointments…",
+      "Saving to memory…",
+    ];
+    let stageIdx = 0;
+    setIngestStage(stages[0]);
+    const stageTimer = setInterval(() => {
+      stageIdx = Math.min(stageIdx + 1, stages.length - 1);
+      setIngestStage(stages[stageIdx]);
+    }, 12000);
+
     try {
       const form = new FormData();
       form.append("file", pdfFile);
       const res = await fetch("/api/engine/ingest/document", { method: "POST", body: form });
+      clearInterval(stageTimer);
       if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
       const data = await res.json();
       setIngestResult({ summary: data.summary, created_refs: data.created_refs });
       setStatus("success");
       setPdfFile(null);
     } catch (err) {
+      clearInterval(stageTimer);
       setStatus("error");
       setErrMsg(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setIngestStage("");
     }
   }
 
@@ -337,7 +357,7 @@ export default function MemoriesPage() {
                 disabled={!pdfFile || status === "loading"}
                 className="mt-1 w-full rounded-md bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50 transition-colors"
               >
-                {status === "loading" ? "Reading document…" : "Upload & extract"}
+                {status === "loading" ? (ingestStage || "Processing…") : "Upload & extract"}
               </button>
             )}
           </form>

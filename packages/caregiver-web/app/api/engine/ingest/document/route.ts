@@ -1,0 +1,35 @@
+import { NextRequest, NextResponse } from "next/server";
+
+const ENGINE_URL = process.env.MEMORY_ENGINE_URL ?? "http://localhost:8000";
+
+// Disable Next.js body parsing — we forward raw multipart to the engine.
+export const config = { api: { bodyParser: false } };
+
+export async function POST(req: NextRequest) {
+  try {
+    const form = await req.formData();
+    const file = form.get("file") as File | null;
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    // Rebuild multipart to forward to the engine (which expects field name "file")
+    const forward = new FormData();
+    forward.append("file", file, file.name);
+
+    const res = await fetch(`${ENGINE_URL}/ingest/document`, {
+      method: "POST",
+      body: forward,
+      // No Content-Type header — fetch sets it automatically with boundary
+    });
+
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
+  } catch (err) {
+    console.error("[ingest/document proxy]", err);
+    return NextResponse.json(
+      { created_refs: [], summary: "Upload failed — engine unreachable.", raw_extraction: "" },
+      { status: 200 },
+    );
+  }
+}

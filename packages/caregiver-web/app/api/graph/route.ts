@@ -26,9 +26,11 @@ export async function GET() {
     sbFetch("events",  "participant_ids") as Promise<RawEvent[]>,
   ]);
 
-  // Deduplicate by (label, type) — keep first occurrence of each unique name
+  // Deduplicate by name — keep first occurrence, build a remap for duplicates
+  // so edges pointing to deduped-away UUIDs still resolve.
   const seenPersons = new Map<string, string>(); // name → canonical ref
   const seenPlaces  = new Map<string, string>();
+  const refRemap    = new Map<string, string>(); // duplicate ref → canonical ref
 
   const nodes: { id: string; label: string; type: string; sub: string }[] = [];
 
@@ -39,6 +41,9 @@ export async function GET() {
     if (!seenPersons.has(p.name)) {
       seenPersons.set(p.name, ref);
       nodes.push({ id: ref, label: p.name, type: "person", sub: p.relationship });
+    } else {
+      // Map this duplicate ref → canonical so edges still work
+      refRemap.set(ref, seenPersons.get(p.name)!);
     }
   }
   for (const p of places) {
@@ -46,27 +51,43 @@ export async function GET() {
     if (!seenPlaces.has(p.name)) {
       seenPlaces.set(p.name, ref);
       nodes.push({ id: ref, label: p.name, type: "place", sub: p.kind });
+    } else {
+      refRemap.set(ref, seenPlaces.get(p.name)!);
     }
   }
 
   const validIds = new Set(nodes.map((n) => n.id));
+  const resolve  = (ref: string) => refRemap.get(ref) ?? ref;
 
-  // Seeded edges
-  const links: { source: string; target: string; type: string; weight: number }[] = edges
-    .filter((e) => validIds.has(e.from_ref) && validIds.has(e.to_ref))
-    .map((e) => ({ source: e.from_ref, target: e.to_ref, type: e.type, weight: e.weight }));
+  // Seeded edges — remap any duplicate refs before filtering
+  const seededEdgeSeen = new Set<string>();
+  const links: { source: string; target: string; type: string; weight: number }[] = [];
 
-  // Derive edges from event participant_ids — link each participant to Amma
-  const ammaRef = "person:7b799a74-176f-4829-973e-d68d915b424a";
+  for (const e of edges) {
+    const src = resolve(e.from_ref);
+    const tgt = resolve(e.to_ref);
+    if (!validIds.has(src) || !validIds.has(tgt)) continue;
+    const key = `${src}→${tgt}:${e.type}`;
+    if (seededEdgeSeen.has(key)) continue;
+    seededEdgeSeen.add(key);
+    links.push({ source: src, target: tgt, type: e.type, weight: e.weight });
+  }
+
+  // Derive edges from event participant_ids — link each participant to Amma.
+  // Find Amma dynamically so the ref always matches a real node.
+  const ammaNode = nodes.find((n) => n.type === "person" && (n.sub === "self" || n.label === "Amma"));
+  const ammaRef  = ammaNode?.id ?? "";
   const eventEdgeSeen = new Set<string>();
-  for (const ev of events) {
-    for (const pid of ev.participant_ids ?? []) {
-      const ref = `person:${pid}`;
-      if (!validIds.has(ref) || ref === ammaRef) continue;
-      const key = `${ref}→${ammaRef}`;
-      if (eventEdgeSeen.has(key)) continue;
-      eventEdgeSeen.add(key);
-      links.push({ source: ref, target: ammaRef, type: "visits", weight: 1 });
+  if (ammaRef) {
+    for (const ev of events) {
+      for (const pid of ev.participant_ids ?? []) {
+        const ref = resolve(`person:${pid}`);
+        if (!validIds.has(ref) || ref === ammaRef) continue;
+        const key = `${ref}→${ammaRef}`;
+        if (eventEdgeSeen.has(key)) continue;
+        eventEdgeSeen.add(key);
+        links.push({ source: ref, target: ammaRef, type: "visits", weight: 1 });
+      }
     }
   }
 

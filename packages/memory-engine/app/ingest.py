@@ -74,14 +74,14 @@ Rules:
 
 
 async def _groq_normalize(raw_extraction: str) -> dict[str, Any]:
-    """Groq second pass: Unsiloed prose → schema-shaped records."""
-    if not settings.groq_api_key:
+    """Normalize Unsiloed extraction → schema-shaped records using OpenAI."""
+    if not settings.openai_api_key:
         return {"summary": "", "medications": [], "events": [], "persons": []}
     try:
-        from groq import AsyncGroq
-        client = AsyncGroq(api_key=settings.groq_api_key)
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
         resp = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": _GROQ_NORMALIZE_SYSTEM},
                 {"role": "user", "content": raw_extraction},
@@ -92,7 +92,7 @@ async def _groq_normalize(raw_extraction: str) -> dict[str, Any]:
         )
         return json.loads(resp.choices[0].message.content or "{}")
     except Exception as e:
-        print(f"[ingest] Groq normalize failed: {e!r}")
+        print(f"[ingest] normalize failed: {e!r}")
         return {"summary": "", "medications": [], "events": [], "persons": []}
 
 
