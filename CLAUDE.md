@@ -64,11 +64,11 @@ The Karpathy principles above are the *how*. Below are Yaad's *what* and *why*.
 
 ## 0. CLAUDE.md — read first
 
-**Mission.** Build *Yaad*: a warm, bilingual (Hindi/English) voice companion for someone with early dementia, backed by an **episodic, temporal, self-updating memory graph built on Moss.** Open emotional ("who is this?" → "that's Leo, your grandson"); reveal technical (a memory layer on Moss — temporal state, instant updates, on-device retrieval).
+**Mission.** Build *Yaad*: a warm, bilingual (Hindi/English) voice companion for someone with early dementia, backed by **a living memory that lives inside the agent on Moss** — instant updates usable mid-conversation, fully on-device, sub-10ms so it never breaks the flow of talking. Open emotional ("who is this?" → "that's Leo, your grandson"); reveal technical (instant updates · wifi-off · sub-1s — Moss's headline features applied to a human life).
 
 **Why we're building it (keep this in the pitch, restrained):** Rushil's grandmother had Alzheimer's; by the end the hardest part was watching the people who loved her become strangers to her. Yaad is the thing we wish she'd had. Frame the demo as *"memory is beautiful,"* never *"look how sad this disease is."*
 
-**The rule that wins:** Moss is the hero. Every spoken answer is grounded in retrieved memory. Hero beats: (1) instant updates (family adds a fact → usable next sentence), (2) wifi-off still works (on-device), (3) temporal state ("did I take my pills today?"), (4) it's a *graph*, not flat RAG.
+**The rule that wins:** Moss is the hero. Every spoken answer is grounded in retrieved memory. Hero beats: (1) instant updates (family adds a fact → usable next sentence), (2) wifi-off still works (on-device), (3) temporal state ("did I take my pills today?"), (4) sub-10ms retrieval so the agent never feels laggy. These ARE Moss's headline features applied to a human life — don't reframe them as "graph vs RAG"; the differentiator is *living memory inside the agent*, not the index data structure.
 
 **Golden rules:**
 1. **Freeze the contract (§3) in hour 1.** All three tracks code against it. Never change it silently.
@@ -243,7 +243,7 @@ Capture the 5 beats into `fixtures/`. `voice-agent/fallback.py`: 3s timeout on a
 **Parallel from 1.5** — each owner full-time + one supervised Claude Code agent against the frozen contract (agents do scaffolding/boilerplate **and keep their package CLAUDE.md/STATUS.md current**; humans own hard logic + integration; no two agents in one module). Integrate A↔B by ~hour 7.5; **★ core flawless by ~hour 11.5** (protect this). Then one optional (vision OR wander) + reminders + polish + resilience + record.
 
 ## 15. Demo script (~90s)
-Why (grandmother, restrained) → "who is this?" → "did I take my pills today?" → add-fact-live → wifi-off → reveal ("a memory graph on Moss — search engines organize information; we organize a human life") + Hindi line → close ("we gave a family their memories back") + sponsor thanks (Moss, MiniMax, LiveKit, Unsiloed).
+Why (grandmother, restrained) → "who is this?" → "did I take my pills today?" → add-fact-live → wifi-off → reveal ("a living memory on Moss — search engines retrieve documents; Moss lets us retrieve a life, instantly, on-device, in the time it takes a person to take a breath") + Hindi line → close ("we gave a family their memories back") + sponsor thanks (Moss, MiniMax, LiveKit, Unsiloed).
 
 ## 16. Definition of done
 ✅ 5 beats live AND from fixtures · ✅ grounded-only verified · ✅ instant-update <1s · ✅ temporal "pills today" · ✅ wifi-off · ✅ Hindi exchange · ✅ latency overlay + eval table · ✅ (opt) vision or wander + a reminder · ✅ 90s video + fixture path rehearsed · ✅ **all Claude files (root + 3 package CLAUDE.md + CONTRACT.md + STATUS.md) match the shipped code.**

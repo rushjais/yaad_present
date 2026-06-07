@@ -51,26 +51,114 @@ def _dedupe_by_name(rows: list[dict], key: str = "name") -> list[dict]:
     return list(by_name.values())
 
 
-def _person_text(p: dict) -> str:
+# ---------------------------------------------------------------------------
+# Chunk text builders — v2 design: every entity's chunk bakes its
+# relationships into the text. Moss semantic match then naturally answers
+# relational queries ("Leo's mom" matches Leo's chunk → LLM reads "Sarah's
+# son" → answers Sarah). No edge-walking needed.
+# ---------------------------------------------------------------------------
+
+# Edge type → natural-language phrase about the FROM entity relative to TO.
+# e.g. ("Leo", "grandson_of", "Amma") → "Amma's grandson"
+_FORWARD_PHRASE = {
+    "grandson_of":      "{to}'s grandson",
+    "granddaughter_of": "{to}'s granddaughter",
+    "daughter_of":      "{to}'s daughter",
+    "son_of":           "{to}'s son",
+    "mother_of":        "{to}'s mother",
+    "father_of":        "{to}'s father",
+    "sister_of":        "{to}'s sister",
+    "brother_of":       "{to}'s brother",
+    "lives_at":         "lives at {to}",
+    "frequents":        "regularly visits {to}",
+}
+# Edge from another direction: ("Amma", "grandson_of", reversed) → "Leo's grandmother"
+_REVERSE_PHRASE = {
+    "grandson_of":      "{from}'s grandmother",
+    "granddaughter_of": "{from}'s grandmother",
+    "daughter_of":      "{from}'s mother",
+    "son_of":           "{from}'s mother",
+    "mother_of":        "{from}'s daughter",
+    "father_of":        "{from}'s daughter",
+    "sister_of":        "{from}'s sister",
+    "brother_of":       "{from}'s sister",
+    "lives_at":         "home of {from}",
+    "frequents":        "where {from} walks",
+}
+
+
+def _build_relations_for(ref: str,
+                          edges: list[dict],
+                          name_by_ref: dict[str, str]) -> list[str]:
+    """Return a list of NL phrases describing this entity's relationships,
+    suitable for inlining into its Moss chunk.
+    """
+    phrases: list[str] = []
+    for e in edges:
+        from_ref = e["from_ref"]
+        to_ref = e["to_ref"]
+        et = e.get("type", "related")
+        if from_ref == ref:
+            other = name_by_ref.get(to_ref)
+            if not other:
+                continue
+            tmpl = _FORWARD_PHRASE.get(et)
+            if tmpl:
+                phrases.append(tmpl.format(to=other, from_=name_by_ref.get(from_ref, "")))
+        elif to_ref == ref:
+            other = name_by_ref.get(from_ref)
+            if not other:
+                continue
+            tmpl = _REVERSE_PHRASE.get(et)
+            if tmpl:
+                phrases.append(tmpl.format(from_=other, **{"from": other}, to=name_by_ref.get(to_ref, "")))
+    # de-dupe, preserve order
+    seen = set()
+    out = []
+    for p in phrases:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _person_text(p: dict, relations: list[str]) -> str:
     aliases = p.get("aliases") or []
-    alias_str = f" (also called {', '.join(aliases)})" if aliases else ""
-    return f"{p['name']} — {p.get('relationship', 'unknown')}{alias_str}. {p.get('notes', '')}"
+    parts: list[str] = [p["name"]]
+    if relations:
+        parts.append(", ".join(relations))
+    if p.get("notes"):
+        parts.append(p["notes"])
+    if aliases:
+        parts.append(f"Also called {', '.join(aliases)}.")
+    return ". ".join(s.strip().rstrip(".") for s in parts if s) + "."
 
 
-def _place_text(pl: dict) -> str:
-    return f"{pl['name']} ({pl.get('kind', 'place')}): {pl.get('notes', '')}"
+def _place_text(pl: dict, relations: list[str]) -> str:
+    parts = [pl["name"]]
+    if relations:
+        parts.append(", ".join(relations))
+    if pl.get("notes"):
+        parts.append(pl["notes"])
+    return ". ".join(s.strip().rstrip(".") for s in parts if s) + "."
 
 
 def _medication_text(m: dict) -> str:
-    return f"Medication: {m['name']}. {m.get('notes', '')}"
+    return f"{m['name']} — Amma's medication. {m.get('notes', '')}"
 
 
-def _event_text(e: dict) -> str:
-    return f"Event: {e['title']}. {e.get('notes', '')}"
+def _event_text(e: dict, name_by_ref: dict[str, str]) -> str:
+    participants = [name_by_ref.get(f"person:{pid}") for pid in (e.get("participant_ids") or [])]
+    participants = [p for p in participants if p]
+    who = f" with {', '.join(participants)}" if participants else ""
+    return f"{e['title']}{who}. {e.get('notes', '')}".strip()
 
 
-def _story_text(s: dict) -> str:
-    return f"Story — {s['title']}: {s.get('text', '')}"
+def _story_text(s: dict, name_by_ref: dict[str, str]) -> str:
+    people = [name_by_ref.get(f"person:{pid}") for pid in (s.get("people_ids") or [])]
+    people = [p for p in people if p]
+    about = f" (about {', '.join(people)})" if people else ""
+    return f"Story{about}: {s.get('text', '')}"
 
 
 async def build_moss_items() -> list[dict]:
@@ -88,11 +176,27 @@ async def build_moss_items() -> list[dict]:
     moss_items: list[dict] = []
 
     print(f"Reseed → Moss index '{settings.moss_index}'")
+
     persons = _dedupe_by_name(db.table("persons").select("*").execute().data or [])
+    places = _dedupe_by_name(db.table("places").select("*").execute().data or [])
+    medications = _dedupe_by_name(db.table("medications").select("*").execute().data or [])
+    edges = db.table("edges").select("*").execute().data or []
+
+    # Build ref → name map for relationship rendering
+    name_by_ref: dict[str, str] = {}
     for p in persons:
+        name_by_ref[f"person:{p['id']}"] = p["name"]
+    for pl in places:
+        name_by_ref[f"place:{pl['id']}"] = pl["name"]
+    for m in medications:
+        name_by_ref[f"medication:{m['id']}"] = m["name"]
+
+    for p in persons:
+        ref = f"person:{p['id']}"
+        relations = _build_relations_for(ref, edges, name_by_ref)
         moss_items.append({
-            "id": f"person:{p['id']}",
-            "text": _person_text(p),
+            "id": ref,
+            "text": _person_text(p, relations),
             "metadata": {
                 "type": "person",
                 "name": p["name"],
@@ -102,11 +206,12 @@ async def build_moss_items() -> list[dict]:
         })
     print(f"  persons: {len(persons)}")
 
-    places = _dedupe_by_name(db.table("places").select("*").execute().data or [])
     for pl in places:
+        ref = f"place:{pl['id']}"
+        relations = _build_relations_for(ref, edges, name_by_ref)
         moss_items.append({
-            "id": f"place:{pl['id']}",
-            "text": _place_text(pl),
+            "id": ref,
+            "text": _place_text(pl, relations),
             "metadata": {
                 "type": "place",
                 "name": pl["name"],
@@ -116,7 +221,6 @@ async def build_moss_items() -> list[dict]:
         })
     print(f"  places: {len(places)}")
 
-    medications = _dedupe_by_name(db.table("medications").select("*").execute().data or [])
     for m in medications:
         moss_items.append({
             "id": f"medication:{m['id']}",
@@ -129,6 +233,29 @@ async def build_moss_items() -> list[dict]:
         })
     print(f"  medications: {len(medications)}")
 
+    # Family-overview chunk — a single chunk that mentions everyone in the
+    # immediate circle. Lets "tell me about my family" (which has no proper
+    # noun for the τ gate to hook into) hit a clear target instead of getting
+    # filtered. Cheap, scoped, demo-saving.
+    family_members = []
+    for p in persons:
+        rel = p.get("relationship", "")
+        notes = (p.get("notes") or "").split(".")[0]
+        if rel and rel != "self":
+            family_members.append(f"{p['name']} ({rel}, {notes.strip().lower()})")
+        elif rel == "self":
+            family_members.append(f"{p['name']} (the patient, {notes.strip().lower()})")
+    if family_members:
+        moss_items.append({
+            "id": "summary:family",
+            "text": "Amma's family includes: " + "; ".join(family_members) + ".",
+            "metadata": {
+                "type": "story",
+                "title": "Family overview",
+                "provenance": prov(source="seed_overview"),
+            },
+        })
+
     events = _dedupe_by_name(
         db.table("events").select("*").execute().data or [],
         key="title",
@@ -136,7 +263,7 @@ async def build_moss_items() -> list[dict]:
     for e in events:
         moss_items.append({
             "id": f"event:{e['id']}",
-            "text": _event_text(e),
+            "text": _event_text(e, name_by_ref),
             "metadata": {
                 "type": "event",
                 "title": e["title"],
@@ -153,7 +280,7 @@ async def build_moss_items() -> list[dict]:
     for s in stories:
         moss_items.append({
             "id": f"story:{s['id']}",
-            "text": _story_text(s),
+            "text": _story_text(s, name_by_ref),
             "metadata": {
                 "type": "story",
                 "title": s["title"],
@@ -164,14 +291,36 @@ async def build_moss_items() -> list[dict]:
     return moss_items
 
 
-async def reseed_moss(verify: bool = True, verbose: bool = True) -> int:
+async def reseed_moss(verify: bool = True, verbose: bool = True,
+                       wipe_first: bool = False) -> int:
     """Reseed the in-process Moss session from Supabase.
+
+    If `wipe_first=True`, delete the cloud index entirely first so stale test
+    garbage (e.g. dynamic TestPerson/Bibhuti chunks from earlier runs) is
+    purged. Run with `--wipe` from the CLI before a demo or after dirty test
+    runs. Default is additive (no wipe) so server startup stays cheap.
+
     Returns 0 on success, 1 on verification failure.
     """
     pkg = os.path.join(os.path.dirname(__file__), "..", "packages", "memory-engine")
     if pkg not in sys.path:
         sys.path.insert(0, pkg)
+    from app.config import settings  # type: ignore
     from app.moss_client import moss  # type: ignore
+
+    if wipe_first:
+        if verbose:
+            print(f"Wiping Moss index '{settings.moss_index}'…")
+        try:
+            from moss import MossClient
+            client = MossClient(settings.moss_project_id, settings.moss_project_key)
+            client.delete_index(settings.moss_index)
+        except Exception as e:
+            if verbose:
+                print(f"  wipe failed (continuing): {e!r}")
+        # Force the wrapper to re-open a fresh session next call
+        moss._session = None
+        moss._client = None
 
     items = await build_moss_items()
     if verbose:
@@ -217,4 +366,5 @@ async def reseed_moss(verify: bool = True, verbose: bool = True) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(reseed_moss()))
+    wipe = "--wipe" in sys.argv
+    sys.exit(asyncio.run(reseed_moss(wipe_first=wipe)))

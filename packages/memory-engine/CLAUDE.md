@@ -1,9 +1,27 @@
 # Track B — Memory Engine · CLAUDE.md
 **Owner: Keshav** · Before you code: re-read this file + root STATUS.md. After you code: update them.
 
-## Current phase: B7 — Robustness rebuild **complete** ✅ (2026-06-06)
+## Current phase: B7.1 — Chunks + τ simplification **complete** ✅ (2026-06-06)
 
-44/44 tests green: 16 smoke + 28 robustness. p95 = 19ms server-side.
+43/43 tests green: 15 smoke + 28 robustness. p95 = 22ms server-side.
+
+### v2 architecture (this is what's live)
+Read `MEMORY_V2_README.md` at repo root for the teammate-facing version.
+
+The big shift: we used to walk a graph (edges + 1-hop expansion in retrieval.py). We don't anymore. Instead:
+1. **Better Moss chunks** at seed time bake relationships into the text. Leo's chunk literally says *"Leo. Amma's grandson, Sarah's son. 22…"*. Moss semantic match on "Leo's mom" returns Leo's chunk; the downstream LLM reads "Sarah's son" and answers Sarah. Zero edge code.
+2. **Single hard τ relevance gate** in `retrieval.py` (TAU=0.82). Below τ → safe refusal. No `_OFF_TOPIC_HINTS`, no `_IMPLICIT_ENTITY_WORDS`, no entity-name-in-top check. One rule.
+3. **One-hop query expansion** when the user mentions multiple entities and one isn't represented — fires a second Moss query. Graph-like behavior, still on Moss.
+4. **Family-overview chunk** ("Amma's family includes: Leo (grandson…)…") guarantees a target for kinship queries without proper nouns.
+5. **answer_draft for semantic queries = top chunk text** (LLM downstream rewrites). Temporal still pre-composes grounded negatives.
+
+### What still does what
+- `intent.py` — hybrid regex+Groq, unchanged from v1.
+- `time_window.py` — unchanged.
+- `temporal.py` — unchanged: per-medication routing, grounded negatives, time windows.
+- `capture.py` — unchanged: Groq structured extraction → captured_fact + pending_review.
+- `graph.py` — trimmed to ~50 lines, entity_text cache only (used by capture).
+- `retrieval.py` — rewritten lean: Moss → τ → optional expansion → items[].
 
 | Beat | Robustness score |
 |---|---|

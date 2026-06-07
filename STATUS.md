@@ -17,8 +17,19 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - **Heads-up:** when Track B's B7 rebuild lands, `/memory/query` and `/memory/temporal` accept the same shape but return richer `items[]` (graph-expanded neighbors + edge-typed text). Treat `items[].text` as authoritative; do NOT reparse. `Intent`-routed responses may take up to ~200ms when the regex fast-path misses (LLM fallback) — fire speculatively on partial transcript as A3 already plans.
 
 ### Track B — Memory (Keshav)
-- Phase: **B7 — Robustness rebuild complete (2026-06-06)** ✅
-- All 44 tests green: 16 smoke + 28 robustness, p95 = 19ms (was 2543ms before graph cache).
+- Phase: **B7.1 — Chunks + τ simplification complete (2026-06-06)** ✅
+  - See `MEMORY_V2_README.md` for the teammate-facing summary of what changed and why.
+- 43/43 tests green: 15 smoke + 28 robustness, p95 = 22ms.
+- Pitch language updated: dropped "memory graph" framing → **"a living memory that lives inside the agent"** (instant updates, on-device, sub-10ms).
+- **What changed in v2 (in addition to all the v1 work below):**
+  1. Killed graph expansion + relational-walk + 4-layer guards. Single hard τ=0.82 relevance gate.
+  2. Better Moss chunks: relationships baked into entity text at seed time ("Leo. Amma's grandson, Sarah's son. 22 years old…"). Moss semantic match now answers relational questions without edge walking.
+  3. Family-overview chunk for "tell me about my family" — guarantees a high-score target for kinship queries that have no proper noun.
+  4. Optional 1-hop query expansion when the user mentions multiple entities (e.g. "Did Leo get into Stanford?"). Replaces graph traversal; still on Moss.
+  5. `answer_draft` for semantic queries is now the top chunk text — the voice agent's LLM rewrites it. Temporal still pre-composes (grounded negatives need exact phrasing).
+  6. `scripts/reseed_moss.py --wipe` deletes the cloud index before reseeding. Use before demo or after dirty test runs.
+  7. `graph.py` trimmed to ~50 lines — entity_text cache only (for capture).
+- Pre-v2 (still in place): intent classifier (regex+Groq), time-window parser, temporal routing with per-medication, capture w/ structured extraction + review queue, Moss session self-heal on startup.
 - **What shipped:**
   1. ✅ `scripts/reseed_moss.py` — Supabase → Moss reseed; runs on server startup hook so each fresh process self-heals (Moss `SessionIndex.session()` does NOT auto-resume the cloud index)
   2. ✅ `app/intent.py` + `app/time_window.py` — single understanding pass; regex fast-path (5 demo phrasings, <1ms) + Groq llama-3.3-70b LLM fallback; relative-time parser (today/yesterday/this morning/last week/before lunch)
