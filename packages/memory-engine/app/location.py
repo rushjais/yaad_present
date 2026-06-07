@@ -90,23 +90,81 @@ async def handle_ping(lat: float, lng: float) -> LocationPingResponse:
     )
 
 
-def _send_sms_alerts(contacts: list[dict], lat: float, lng: float) -> None:
-    import os
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
-    from_number = os.getenv("TWILIO_FROM", "")
-    if not (account_sid and auth_token and from_number):
-        return
+def _send_sms_alerts(contacts: list[dict], lat: float, lng: float) -> list[dict]:
+    """Fire wander-alert SMS to each contact via Gmail SMTP → carrier
+    email-to-SMS gateway. Returns a list of result dicts {contact, to,
+    ok, error?} — used by the smoke test to verify e2e.
 
-    from twilio.rest import Client
-    client = Client(account_sid, auth_token)
+    Why not Twilio: trial toll-free numbers can't deliver SMS to US carriers
+    without a 3-7 day Toll-Free Verification process. The email-to-SMS
+    gateway path is instant, free, and bypasses all of that. Recipient sees
+    a normal SMS on their phone.
+
+    Address format: <number>@<carrier-gateway>. Google Fi uses
+    @msg.fi.google.com; AT&T @txt.att.net; T-Mobile @tmomail.net.
+
+    YAAD_DEMO_RECIPIENT_EMAIL override: when set, EVERY alert goes to that
+    address regardless of contacts. Use during demo / smoke test so we
+    don't need to populate phone+carrier on every contact row.
+    """
+    import os
+    import smtplib
+    import ssl
+    from email.message import EmailMessage
+
+    email_from = os.getenv("EMAIL_FROM", "").strip()
+    app_password = os.getenv("EMAIL_APP_PASSWORD", "").strip().replace(" ", "")
+    demo_recipient = os.getenv("YAAD_DEMO_RECIPIENT_EMAIL", "").strip()
+    if not (email_from and app_password):
+        return [{"contact": None, "to": None, "ok": False,
+                 "error": "EMAIL_FROM / EMAIL_APP_PASSWORD not set"}]
+
     maps_link = f"https://maps.google.com/?q={lat},{lng}"
-    for c in contacts:
-        phone = c.get("phone", "")
-        if not phone:
-            continue
-        client.messages.create(
-            body=f"Yaad alert: Amma may have wandered. Location: {maps_link}",
-            from_=from_number,
-            to=phone,
-        )
+    ts = datetime.now(timezone.utc).strftime("%-I:%M %p UTC")
+
+    # One SMTP connection, multiple sends. Use certifi's CA bundle —
+    # macOS python.org Python sometimes ships without root certs, which
+    # makes ssl.create_default_context() fail SSL handshake to Gmail.
+    results: list[dict] = []
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    try:
+        smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx, timeout=15)
+        smtp.login(email_from, app_password)
+    except Exception as e:
+        return [{"contact": None, "to": None, "ok": False,
+                 "error": f"SMTP login failed: {e!r}"}]
+
+    try:
+        for c in contacts:
+            to = demo_recipient or (c.get("phone_email") or "").strip()
+            if not to:
+                results.append({"contact": c.get("name"), "to": None,
+                                "ok": False, "error": "no phone_email"})
+                continue
+            msg = EmailMessage()
+            # Keep body short — carrier gateways often truncate at ~160 chars
+            # and prepend the from-address, so leave headroom.
+            msg.set_content(
+                f"Yaad alert ({ts}): Amma may have left her safe zone. "
+                f"For {c.get('name', 'family')}. "
+                f"Loc: {maps_link}"
+            )
+            msg["Subject"] = ""  # SMS gateways often drop subject; keep empty
+            msg["From"] = email_from
+            msg["To"] = to
+            try:
+                smtp.send_message(msg)
+                results.append({"contact": c.get("name"), "to": to, "ok": True})
+            except Exception as e:
+                results.append({"contact": c.get("name"), "to": to,
+                                "ok": False, "error": repr(e)})
+    finally:
+        try:
+            smtp.quit()
+        except Exception:
+            pass
+    return results

@@ -10,6 +10,15 @@ import time
 from datetime import date, datetime, timezone
 from typing import Any
 
+# Load .env into process env so modules using raw os.getenv (e.g.
+# location.py reading TWILIO_*, YAAD_DEMO_RECIPIENT) see the values.
+# pydantic-settings reads .env on its own, but raw os.getenv doesn't.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, File, Query, UploadFile
 
 from .schemas import (

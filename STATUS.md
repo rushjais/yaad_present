@@ -57,7 +57,8 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 | Supabase | ✅ LIVE | All 12 tables exist, seeded. URL + key in `.env`. |
 | Groq | ⚠ LIVE w/ quota tight | 16 models. Use for LLM (`llama-3.3-70b-versatile`) and STT (`whisper-large-v3`). **2026-06-06: hit 100k TPD on 70b**; rewrite + enrichment moved to `llama-3.1-8b-instant` (separate quota). Reseed enrichment is serialized w/ 0.4s pause to stay under 8b's 6000 TPM. Upgrade to Dev Tier before demo if running multiple test cycles. |
 | MiniMax TTS | ✅ LIVE | Track A confirmed `api.minimax.io` (status_code=0, 29KB MP3). Track B docs recommend `api.minimaxi.chat`. Both work; code uses `api.minimax.io`. Model: `speech-02-hd`. |
-| Twilio | ✅ LIVE | Account active. SMS fires with current keys. |
+| Twilio | ❌ REMOVED | Trial toll-free numbers require 3-7d verification before US carrier delivery. Replaced with email-to-SMS via carrier gateway (Gmail SMTP → `<number>@msg.fi.google.com`). Instant, free, looks like a normal SMS. See `location._send_sms_alerts`. |
+| Gmail SMTP (email-to-SMS) | ✅ LIVE & WIRED | `EMAIL_FROM` + `EMAIL_APP_PASSWORD` in `.env`. `YAAD_DEMO_RECIPIENT_EMAIL` override routes every alert to one address during demo. End-to-end smoke green: ping → `alerts` row → SMTP send → SMS on Google Fi phone. |
 | LiveKit | ✅ LIVE | Connected to `wss://keepsake-y39026vu.livekit.cloud`, room `yaad-demo` confirmed. |
 | TrueFoundry | ✅ LIVE | `gateway.truefoundry.ai`, model `openai/gpt-4o-mini`. Confirmed by Track A. |
 | Unsiloed | ✅ LIVE & WIRED | Base: `https://platformbackend.unsiloed.ai`. Auth: `Api-Key` header. Upload field: multipart `document` (NOT `file`). Chat field: form-data `message` (NOT `question`). Wired into memory engine via `POST /ingest/document` — see `app/unsiloed.py` + `app/ingest.py`. End-to-end smoke green: discharge PDF → 2 meds + 1 event + 2 persons + 1 story → all queryable. |
@@ -69,7 +70,7 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - `fixtures/tts/*.mp3` — **NOT YET GENERATED** — voice agent must pre-cache TTS for wifi-off beat (A4)
 - `vision.py` — uses OpenAI placeholder; no key set; fixture fallback always fires
 - `capture.py` — B7 rebuilt but auto-capture not auto-committing; `captured_fact` retrievable immediately, structured proposal in `episodes(kind='pending_review')` for caregiver confirmation. Reliable add-fact-live = Track C web form.
-- Twilio SMS fires but location alert not tested end-to-end yet
+- Wander alert delivery: Gmail SMTP → `@msg.fi.google.com` (carrier gateway). End-to-end smoke green; verified SMS landed on Google Fi phone. Twilio path removed (toll-free verification was the blocker).
 - Moss `SessionIndex.session()` does NOT reliably resume cloud index in a fresh process. Workaround: `scripts/reseed_moss.py` reseeds from Supabase before each demo.
 - `app/main.py` silent fixture fallback (`try: real; except: fixture`) hides real errors — will gate behind `YAAD_DEMO_MODE=1` in follow-up.
 
@@ -86,4 +87,4 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 ## [CONFIRM] remaining open items
 - **fixtures/tts/*.mp3:** pre-cache TTS clips for wifi-off beat (A4) — not yet generated
 - **TrueFoundry base_url (B):** unused by memory engine; tracked for visibility
-- **Twilio vs push:** for wander alerts (`location.py`) — not tested end-to-end
+- ~~**Twilio vs push:** for wander alerts~~ — resolved 2026-06-06: email-to-SMS via Gmail SMTP + carrier gateway, smoke green.

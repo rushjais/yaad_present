@@ -118,3 +118,9 @@ CREATE TABLE IF NOT EXISTS alerts (
     contacts_notified   JSONB DEFAULT '[]',
     status              TEXT DEFAULT 'active' CHECK (status IN ('active','resolved'))
 );
+
+-- ---------------------------------------------------------------------------
+-- B7.3 (2026-06-06) — wander-alert end-to-end requires a phone column.
+-- Idempotent; safe to re-run.
+-- ---------------------------------------------------------------------------
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS phone TEXT;
