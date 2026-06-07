@@ -37,6 +37,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  #
 
 from .fallback import get_fixture
 from .llm import create_llm
+from .local_transport import LocalAudioTransport
 from .memory_client import MemoryClient
 from .reminders_client import poll_reminders
 from .stt_groq import create_stt
@@ -211,9 +212,9 @@ class SentenceAggregator(FrameProcessor):
 # Pipeline runner
 # ---------------------------------------------------------------------------
 
-async def run_agent(room_name: str) -> None:
+def _build_pipeline(transport) -> tuple:
+    """Build shared pipeline components (VAD, STT, memory, LLM, TTS)."""
     tracker = LatencyTracker()
-    transport = create_transport(room_name)
     vad = VADProcessor(vad_analyzer=create_vad())
     stt = create_stt(tracker=tracker)
     memory_client = MemoryClient()
@@ -224,21 +225,39 @@ async def run_agent(room_name: str) -> None:
 
     pipeline = Pipeline(
         [
-            transport.input(),   # LiveKit audio in → UserAudioRawFrame
+            transport.input(),   # audio in
             vad,                 # VADProcessor → VADUserStartedSpeakingFrame / VADUserStoppedSpeakingFrame
             stt,                 # Groq Whisper STT → TranscriptionFrame
-            memory_processor,    # memory + LLM → TextFrame (streaming)
+            memory_processor,    # memory query + LLM (or answer_draft bypass) → TextFrame
             sentence_agg,        # buffer into sentences
-            tts,                 # MiniMax TTS → AudioRawFrame (logs latency)
-            transport.output(),  # LiveKit audio out
+            tts,                 # MiniMax TTS → TTSAudioRawFrame
+            transport.output(),  # audio out
         ]
     )
+    return pipeline, memory_client
 
-    task = PipelineTask(
-        pipeline,
-        params=PipelineParams(allow_interruptions=True),
-    )
 
+async def run_agent(room_name: str) -> None:
+    """LiveKit mode — connects to the given room."""
+    transport = create_transport(room_name)
+    pipeline, memory_client = _build_pipeline(transport)
+
+    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
+    reminder_queue: asyncio.Queue = asyncio.Queue()
+    asyncio.create_task(poll_reminders(reminder_queue))
+
+    runner = PipelineRunner()
+    await runner.run(task)
+    await memory_client.aclose()
+
+
+async def run_agent_local() -> None:
+    """Local mode — mic + speakers via sounddevice, no LiveKit."""
+    logger.info("Local audio mode — speak into your mic, Yaad will reply through speakers.")
+    transport = LocalAudioTransport()
+    pipeline, memory_client = _build_pipeline(transport)
+
+    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
     reminder_queue: asyncio.Queue = asyncio.Queue()
     asyncio.create_task(poll_reminders(reminder_queue))
 
@@ -248,6 +267,15 @@ async def run_agent(room_name: str) -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO)
-    room = os.environ.get("LIVEKIT_ROOM", "yaad-demo")
-    asyncio.run(run_agent(room))
+    parser = argparse.ArgumentParser(description="Yaad voice agent")
+    parser.add_argument("--local", action="store_true", help="Use local mic/speakers instead of LiveKit")
+    args = parser.parse_args()
+
+    if args.local:
+        asyncio.run(run_agent_local())
+    else:
+        room = os.environ.get("LIVEKIT_ROOM", "yaad-demo")
+        asyncio.run(run_agent(room))

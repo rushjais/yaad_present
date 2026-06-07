@@ -18,9 +18,9 @@ import httpx
 from pydub import AudioSegment  # requires: brew install ffmpeg
 
 from pipecat.frames.frames import (  # type: ignore
-    AudioRawFrame,
     Frame,
     TextFrame,
+    TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
@@ -60,7 +60,7 @@ class MiniMaxTTSService(FrameProcessor):
             if self._tracker:
                 self._tracker.tts = time.perf_counter() - t0
                 self._tracker.log()
-            await self.push_frame(AudioRawFrame(audio=pcm, sample_rate=OUTPUT_SAMPLE_RATE, num_channels=1))
+            await self.push_frame(TTSAudioRawFrame(audio=pcm, sample_rate=OUTPUT_SAMPLE_RATE, num_channels=1))
         except Exception as e:
             logger.error("MiniMax TTS error: %s", e)
         finally:
