@@ -276,6 +276,13 @@ class VisionRecognizeResponse(BaseModel):
     answer_draft: str
 
 
+# POST /ingest/document  (multipart upload — see main.py)
+class IngestDocumentResponse(BaseModel):
+    created_refs: list[str]
+    summary: str
+    raw_extraction: str = ""
+
+
 # GET /health
 class HealthResponse(BaseModel):
     moss_ok: bool
