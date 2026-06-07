@@ -125,16 +125,16 @@ yaad/
   fixtures/                  # demo fallback payloads (§13)
   scripts/ (seed_amma.py, smoke_test.py)
   packages/
-    memory-engine/           # TRACK B — Python/FastAPI [OWNER: Rushil]
+    memory-engine/           # TRACK B — Python/FastAPI [OWNER: Keshav]
       CLAUDE.md              # ← living, track-local
-      app/ (main, moss_client[CONFIRM], graph, retrieval, temporal, grounding,
-            capture, schemas, db, location, vision, reminders)
+      app/ (main, moss_client, graph, retrieval, temporal, grounding,
+            capture, intent, time_window, schemas, db, location, vision, reminders)
       tests/
-    voice-agent/             # TRACK A — Python/Pipecat+LiveKit [OWNER: Keshav]
+    voice-agent/             # TRACK A — Python/Pipecat+LiveKit [OWNER: Rushil]
       CLAUDE.md              # ← living, track-local
-      (agent, transports[CONFIRM], tts_minimax[CONFIRM], stt_deepgram[CONFIRM],
+      (agent, transports[CONFIRM], tts_minimax, stt_groq,
        llm[CONFIRM], memory_client, reminders_client, fallback)
-    caregiver-web/           # TRACK C — Next.js/TS [OWNER: Person 3]
+    caregiver-web/           # TRACK C — Next.js/TS [OWNER: Raghav]
       CLAUDE.md              # ← living, track-local
       app/((dashboard), memories, timeline, graph, safety)
       lib/(api.ts, types.ts), components/(MemoryGraph.tsx)
@@ -177,21 +177,25 @@ TWILIO_ACCOUNT_SID=  TWILIO_AUTH_TOKEN=  TWILIO_FROM=
 
 ---
 
-## 5. TRACK B — Memory Engine [OWNER: Rushil]
+## 5. TRACK B — Memory Engine [OWNER: Keshav]
 Turn Moss retrieval into a grounded, temporal, traversable memory graph behind the §3 API. **Keep `packages/memory-engine/CLAUDE.md` + STATUS.md current as you go (§0.5).**
-- **B0 (hour 1, all-hands):** finalize `schemas.py` == CONTRACT; export OpenAPI; FastAPI with fixture stubs so A/C unblock.
-- **B1 — Moss + write/index:** `moss_client.py` index/query/**instant upsert** [CONFIRM + on-device mode]; `/memory/write`. **Verify instant-update at office hours first**; if on-device shaky → Moss-cloud + reframe wifi-off as "edge-ready."
-- **B2 — graph + retrieval:** `graph.py` entities/episodes/edges + 1-hop traversal; `retrieval.py` `score=α·sem+β·recency+γ·salience+δ·graph_prox`, `recency=exp(-λ·Δt)`.
-- **B3 — grounding:** confidence gate τ → safe refusal; provenance on every item.
-- **B4 — temporal:** time-intent routing; "pills today" → today's med_log; "is X coming" → upcoming events.
-- **B5 — capture + timeline + reminders + location + (opt) vision:** `/memory/capture` (§10), `/memory/timeline`, `/reminders/due` (§12), `location.py` (§8), `vision.py` (§11).
-- **B6 — eval harness:** `smoke_test.py` + a ~20-case grounding/latency table for the demo.
 
-**Acceptance:** every query returns grounded items w/ provenance; ungrounded → safe refusal; a `/memory/write` retrievable < 1s; "pills today" reflects a just-logged dose; p95 within contract; **track CLAUDE.md + STATUS.md match the code.**
+**Phases B0–B6 (initial build) — complete.** See git history through `ce57744`.
+
+**Phase B7 — Robustness rebuild (in progress, 2026-06-06):** the Gate-1 retrieval logic was demo-fragile (regex temporal misses paraphrases, graph proximity never surfaced neighbors, capture was string-match only). Rebuilding the understanding layer so the demo holds under off-script phrasings — see STATUS.md "Track B" and `packages/memory-engine/CLAUDE.md` "B7 architecture" for the full plan. Key adds:
+- `app/intent.py` — hybrid (regex fast-path + Groq LLM fallback) → typed `Intent` consumed by all routers
+- `app/time_window.py` — relative-time parser ("yesterday", "this morning", "before lunch") in user-local tz
+- `temporal.py` rebuilt on `Intent` + per-medication routing; grounded negatives
+- `graph.py` + `retrieval.py` — real 1-hop expansion (neighbors appear in `items[]`); edge-type surfaced in text; relational shortcut
+- `capture.py` — Groq structured extraction + entity resolution (Moss-match top score ≥0.85 → UPDATE, not INSERT); edge creation; capture-confidence gate
+- `tests/robustness.py` — 30+ phrasings per demo beat, all must be grounded; adversarial set must be safe-refused
+- `scripts/reseed_moss.py` — idempotent Supabase → Moss reseed (the cloud `SessionIndex` does not reliably resume — empirically 0 results after server restart)
+
+**Acceptance:** every query returns grounded items w/ provenance; ungrounded → safe refusal; a `/memory/write` retrievable < 1s; "pills today" reflects a just-logged dose; p95 within contract; **all 5 demo beats stay grounded across 30+ phrasing variants** (robustness.py green); **track CLAUDE.md + STATUS.md match the code.**
 
 ---
 
-## 6. TRACK A — Voice Agent (LiveKit + Pipecat + MiniMax) [OWNER: Keshav]
+## 6. TRACK A — Voice Agent (LiveKit + Pipecat + MiniMax) [OWNER: Rushil]
 Warm, low-latency, barge-in voice loop that grounds every answer. **Keep `packages/voice-agent/CLAUDE.md` + STATUS.md current.**
 Pipeline: `LiveKit → VAD → Deepgram STT → intent/lang → memory_client.query()/temporal() (speculative) → LLM (TrueFoundry) w/ grounding prompt → MiniMax TTS → playback`, **barge-in** on VAD.
 **Grounding system prompt:** "You are Yaad, a warm companion for someone with memory loss. State ONLY facts in the provided MEMORY context. If empty/low-confidence, say you're not sure and offer to check with the family. Never invent people/events/dates. Short, calm, warm. Match the user's language (English/Hindi/Hinglish)."
@@ -200,7 +204,7 @@ Pipeline: `LiveKit → VAD → Deepgram STT → intent/lang → memory_client.qu
 
 ---
 
-## 7. TRACK C — Caregiver Web + Seeding + Dashboard + Timeline + Graph + Safety [OWNER: Person 3]
+## 7. TRACK C — Caregiver Web + Seeding + Dashboard + Timeline + Graph + Safety [OWNER: Raghav]
 The family's window. **Keep `packages/caregiver-web/CLAUDE.md` + STATUS.md current.**
 - **C0:** Next.js scaffold; `types.ts` from OpenAPI; typed `api.ts`.
 - **C1 — add-memory forms** (person/event/med/story) → `/memory/write` (drives add-fact-live; one-click fast).
