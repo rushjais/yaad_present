@@ -266,34 +266,47 @@ def index():
 @app.post("/match")
 def match_endpoint():
     """Unchanged: face recognition only, no LLM, no TTS."""
-    body = request.get_json(force=True)
-    dataurl = body.get("image", "")
-    if "," not in dataurl:
-        return jsonify({"error": "invalid image payload"}), 400
+    try:
+        body = request.get_json(force=True)
+        dataurl = body.get("image", "")
+        if "," not in dataurl:
+            return jsonify({"error": "invalid image payload"}), 400
 
-    _, b64 = dataurl.split(",", 1)
-    rgb = np.array(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"))
+        _, b64 = dataurl.split(",", 1)
+        rgb = np.array(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"))
 
-    name, distances = match_rgb(rgb)
-    if name is None:
-        return jsonify({"name": "no face detected", "distances": {}})
-    return jsonify({"name": name, "distances": distances})
+        name, distances = match_rgb(rgb)
+        if name is None:
+            return jsonify({"name": "no face detected", "distances": {}})
+        return jsonify({"name": name, "distances": distances})
+    except Exception as e:
+        return jsonify({"error": str(e), "name": "error", "distances": {}}), 500
 
 
 @app.post("/greet")
 def greet_endpoint():
     """Memory → LLM compose → MiniMax TTS. Returns {name, text, audio_base64}."""
-    body = request.get_json(force=True)
-    name = (body.get("name") or "").strip()
+    name = ""
+    try:
+        body = request.get_json(force=True)
+        name = (body.get("name") or "").strip()
 
-    if not name or name in ("unknown", "no face detected"):
-        return jsonify({"name": name, "text": "I'm not sure who that is, Amma.", "audio_base64": ""})
+        if not name or name in ("unknown", "no face detected"):
+            return jsonify({"name": name, "text": "I'm not sure who that is, Amma.", "audio_base64": ""})
 
-    mem     = query_memory_for_name(name)
-    text    = compose_greeting(name, mem.get("answer_draft"), mem.get("grounded", False))
-    mp3     = synthesize_tts(text)
-    audio64 = base64.b64encode(mp3).decode()
-    return jsonify({"name": name, "text": text, "audio_base64": audio64})
+        # Demo mode: skip memory + LLM entirely — use scripted line straight to TTS
+        if os.environ.get("YAAD_DEMO_MODE") == "1":
+            scripted = _DEMO_GREETINGS.get(name.lower())
+            if scripted:
+                mp3 = synthesize_tts(scripted)
+                return jsonify({"name": name, "text": scripted, "audio_base64": base64.b64encode(mp3).decode()})
+
+        mem     = query_memory_for_name(name)
+        text    = compose_greeting(name, mem.get("answer_draft"), mem.get("grounded", False))
+        mp3     = synthesize_tts(text)
+        return jsonify({"name": name, "text": text, "audio_base64": base64.b64encode(mp3).decode()})
+    except Exception as e:
+        return jsonify({"error": str(e), "name": name, "text": "", "audio_base64": ""}), 500
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
