@@ -68,7 +68,7 @@ SYSTEM_PROMPT = (
 _TEMPORAL_KW = {
     "pill", "pills", "medicine", "medication", "tablet", "dose",
     "took", "taken", "today", "yesterday", "morning", "evening",
-    "coming", "visit", "appointment",
+    "coming", "visit", "appointment", "doctor", "checkup", "schedule",
 }
 
 
@@ -148,11 +148,15 @@ class MemoryContextProcessor(FrameProcessor):
         logger.info("Transcript: %s", frame.text)
         self._tracker.reset()
 
-        # Memory query
+        # Memory query — track which endpoint was used so we know if answer_draft
+        # is a pre-composed temporal fact (must speak verbatim) or a semantic hint
+        # (Keshav's v2 populates answer_draft on /query too, but it's just the top
+        # chunk text — the LLM must still compose the spoken answer).
         t0 = time.perf_counter()
+        used_temporal = _is_temporal(frame.text)
         try:
             async with asyncio.timeout(3.0):
-                if _is_temporal(frame.text):
+                if used_temporal:
                     resp = await self._memory.temporal(frame.text, "en")
                 else:
                     resp = await self._memory.query(frame.text, "en")
@@ -163,15 +167,17 @@ class MemoryContextProcessor(FrameProcessor):
 
         answer_draft = (resp.get("answer_draft") or "").strip()
 
-        if answer_draft:
-            # TEMPORAL PATH — answer_draft encodes absence facts ("not yet taken")
-            # that have no semantic chunk. Emit verbatim; never let the LLM re-compose
-            # or it will silently drop medical negations like "not yet."
-            logger.info("answer_draft present — emitting directly, skipping LLM")
+        if used_temporal and answer_draft:
+            # TEMPORAL PATH — answer_draft pre-composes absence facts like
+            # "not yet taken" that have no semantic chunk. Emit verbatim;
+            # LLM re-composition would silently drop the negation.
+            logger.info("temporal answer_draft — emitting verbatim, skipping LLM")
             self._tracker.llm = 0.0
             await self.push_frame(TextFrame(answer_draft))
         else:
-            # SEMANTIC PATH — compose grounded answer from items[] via LLM
+            # SEMANTIC PATH — compose grounded answer from items[] via LLM.
+            # Includes semantic queries where v2 populates answer_draft as a hint;
+            # the LLM still runs so the identity rule and grounding prompt apply.
             messages = _build_messages_semantic(frame.text, resp)
             t1 = time.perf_counter()
             first_token = True
