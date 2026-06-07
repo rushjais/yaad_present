@@ -22,7 +22,8 @@ The big shift: we used to walk a graph (edges + 1-hop expansion in retrieval.py)
 - `capture.py` — unchanged: Groq structured extraction → captured_fact + pending_review.
 - `graph.py` — trimmed to ~50 lines, entity_text cache only (used by capture).
 - `retrieval.py` — rewritten lean: Moss → τ → optional expansion → items[].
-- `/memory/write` event side effect — after saving an event, `main.py` resolves person names in `payload.title`/`payload.notes` through Moss (top hit type=person, score ≥0.85) and backfills `participant_ids` on the Supabase row. Lowercase caregiver entries are covered by case-insensitive matching against known person names/aliases before Moss verification.
+- `/memory/write` event side effect — after saving an event, `main.py` resolves person names in `payload.title`/`payload.notes` through Moss (first person hit in top 8 with score ≥0.85) and backfills `participant_ids` on the Supabase row. Lowercase caregiver entries are covered by case-insensitive matching against known person names/aliases before Moss verification.
+- `scripts/reseed_moss.py` person chunks include stored `relationship` when the person has no edge-derived relationship phrase, so caregiver-added people retain relationship context after reseed.
 
 | Beat | Robustness score |
 |---|---|

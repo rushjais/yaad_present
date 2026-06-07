@@ -34,7 +34,8 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
   5. `answer_draft` for semantic queries = top chunk text (LLM rewrites). Temporal still pre-composes (grounded negatives need exact phrasing).
   6. `scripts/reseed_moss.py --wipe` deletes cloud index before reseeding. Use before demo or after dirty test runs.
   7. `graph.py` trimmed to ~50 lines — entity_text cache only (for capture).
-- Event writes now backfill `participant_ids` via Moss person resolution (top hit ≥0.85).
+- Event writes now backfill `participant_ids`: `/memory/write` resolves person names mentioned in event title/notes through Moss (first person hit in top 8 with score ≥0.85), including lowercase mentions matched against known names/aliases.
+- `scripts/reseed_moss.py` now preserves stored `person.relationship` in chunks when no edge-derived relationship phrase exists, so newly added people like Aishani keep relationship context after a wipe/reseed.
 - **What shipped:** intent classifier (regex+Groq), time-window parser, temporal routing w/ per-medication, capture w/ structured extraction + review queue, Moss session self-heal on startup. Full list in previous STATUS entries.
 - **Contract impact:** shapes unchanged. `items[]` may contain graph-expanded neighbors. CONTRACT v1 holds — no breaking changes for A or C.
 - **Latency:** regex fast-path sub-20ms. LLM-fallback path ~300ms — Track A fires speculatively on partial transcript.

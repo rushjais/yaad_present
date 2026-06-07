@@ -17,6 +17,7 @@ Why this exists:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import sys
@@ -125,6 +126,8 @@ def _build_relations_for(ref: str,
 def _person_text(p: dict, relations: list[str]) -> str:
     aliases = p.get("aliases") or []
     parts: list[str] = [p["name"]]
+    if p.get("relationship") and not relations:
+        parts.append(p["relationship"])
     if relations:
         parts.append(", ".join(relations))
     if p.get("notes"):
@@ -314,7 +317,9 @@ async def reseed_moss(verify: bool = True, verbose: bool = True,
         try:
             from moss import MossClient
             client = MossClient(settings.moss_project_id, settings.moss_project_key)
-            client.delete_index(settings.moss_index)
+            deleted = client.delete_index(settings.moss_index)
+            if inspect.isawaitable(deleted):
+                await deleted
         except Exception as e:
             if verbose:
                 print(f"  wipe failed (continuing): {e!r}")
@@ -343,14 +348,21 @@ async def reseed_moss(verify: bool = True, verbose: bool = True,
     ]
     fail = False
     for query, expect_type, min_score in checks:
-        hits = await moss.query(query, top_k=3)
+        hits = await moss.query(query, top_k=8)
         if not hits:
             if verbose:
                 print(f"  ❌ '{query}' → 0 results")
             fail = True
             continue
-        top = hits[0]
-        ok = top["score"] >= min_score and top["metadata"].get("type") == expect_type
+        match = next(
+            (
+                h for h in hits
+                if h["score"] >= min_score and h["metadata"].get("type") == expect_type
+            ),
+            None,
+        )
+        top = match or hits[0]
+        ok = match is not None
         if verbose:
             mark = "✅" if ok else "❌"
             print(f"  {mark} '{query}' → {top['score']:.3f} {top['metadata'].get('type')} :: {top['text'][:60]}")
