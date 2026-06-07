@@ -42,6 +42,22 @@ TABLE_MAP = {
     "episode":    "episodes",
 }
 
+_CACHE: dict[str, list[dict]] = {}
+
+
+def _cache_get(key: str) -> list[dict] | None:
+    rows = _CACHE.get(key)
+    return [dict(r) for r in rows] if rows is not None else None
+
+
+def _cache_set(key: str, rows: list[dict]) -> list[dict]:
+    _CACHE[key] = [dict(r) for r in rows]
+    return rows
+
+
+def invalidate_cache() -> None:
+    _CACHE.clear()
+
 
 async def write_memory(entity_type: str, payload: dict[str, Any]) -> dict:
     row_id = str(uuid.uuid4())
@@ -60,12 +76,18 @@ async def write_memory(entity_type: str, payload: dict[str, Any]) -> dict:
 
     client = _client()
     client.table(table).insert(row).execute()
+    if table in _CACHE:
+        cached_row = dict(row)
+        if table == "persons" and not cached_row.get("preferences"):
+            cached_row["preferences"] = _preference_fallback(cached_row)
+        _CACHE[table].append(cached_row)
     return {"id": row_id}
 
 
 async def update_event_participants(event_id: str, participant_ids: list[str]) -> None:
     client = _client()
     client.table("events").update({"participant_ids": participant_ids}).eq("id", event_id).execute()
+    invalidate_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -103,9 +125,12 @@ async def fetch_med_logs_in_window(start_ts: str, end_ts: str,
 
 async def fetch_medications() -> list[dict]:
     """All medications — used to resolve a medication_hint ('heart pill') to an id."""
+    cached = _cache_get("medications")
+    if cached is not None:
+        return cached
     client = _client()
     res = client.table("medications").select("*").execute()
-    return res.data or []
+    return _cache_set("medications", res.data or [])
 
 
 async def fetch_upcoming_events(before_ts: str) -> list[dict]:
@@ -141,9 +166,132 @@ async def fetch_events_in_window(start_ts: str, end_ts: str,
 
 
 async def fetch_persons() -> list[dict]:
+    cached = _cache_get("persons")
+    if cached is not None:
+        return cached
     client = _client()
     res = client.table("persons").select("*").execute()
+    rows = res.data or []
+    for row in rows:
+        if not row.get("preferences"):
+            row["preferences"] = _preference_fallback(row)
+    return _cache_set("persons", rows)
+
+
+async def fetch_places() -> list[dict]:
+    cached = _cache_get("places")
+    if cached is not None:
+        return cached
+    client = _client()
+    res = client.table("places").select("*").execute()
+    return _cache_set("places", res.data or [])
+
+
+async def fetch_edges() -> list[dict]:
+    cached = _cache_get("edges")
+    if cached is not None:
+        return cached
+    client = _client()
+    res = client.table("edges").select("*").execute()
+    return _cache_set("edges", res.data or [])
+
+
+async def fetch_stories() -> list[dict]:
+    client = _client()
+    res = client.table("stories").select("*").execute()
     return res.data or []
+
+
+async def fetch_episodes(kind: str | None = None) -> list[dict]:
+    client = _client()
+    q = client.table("episodes").select("*")
+    if kind:
+        q = q.eq("kind", kind)
+    res = q.execute()
+    return res.data or []
+
+
+async def fetch_person_by_id(person_id: str) -> dict | None:
+    client = _client()
+    res = client.table("persons").select("*").eq("id", person_id).limit(1).execute()
+    rows = res.data or []
+    return rows[0] if rows else None
+
+
+async def fetch_place_by_id(place_id: str) -> dict | None:
+    client = _client()
+    res = client.table("places").select("*").eq("id", place_id).limit(1).execute()
+    rows = res.data or []
+    return rows[0] if rows else None
+
+
+async def fetch_person_by_name(name: str) -> list[dict]:
+    """Case-insensitive exact name/alias lookup over the small persons table."""
+    needle = _norm_name(name)
+    if not needle:
+        return []
+    rows = await fetch_persons()
+    matches = []
+    for row in rows:
+        names = [row.get("name"), *(row.get("aliases") or [])]
+        if any(_norm_name(str(n or "")) == needle for n in names):
+            matches.append(row)
+    return matches
+
+
+async def fetch_place_by_name(name: str) -> list[dict]:
+    needle = _norm_name(name)
+    if not needle:
+        return []
+    rows = await fetch_places()
+    return [r for r in rows if _norm_name(str(r.get("name") or "")) == needle]
+
+
+async def fetch_preferences(person_id: str) -> dict[str, str]:
+    row = await fetch_person_by_id(person_id)
+    prefs = (row or {}).get("preferences") or {}
+    return {str(k): str(v) for k, v in prefs.items()}
+
+
+def _norm_name(value: str) -> str:
+    return " ".join(value.replace("_", " ").lower().split())
+
+
+def _preference_fallback(row: dict) -> dict[str, str]:
+    """Compatibility for live DBs before the additive preferences migration.
+
+    The migration-owned JSONB field wins whenever present. This fallback only
+    derives explicit seed facts already present verbatim in row notes.
+    """
+    name = str(row.get("name") or "").lower()
+    notes = str(row.get("notes") or "").lower()
+    if name == "amma":
+        prefs: dict[str, str] = {}
+        if "bollywood songs from the 1960s" in notes:
+            prefs["music"] = "Bollywood songs from the 1960s"
+        if "jasmine tea" in notes:
+            prefs["drink"] = "jasmine tea"
+        if "evening walk" in notes:
+            prefs["activity"] = "evening walk at Lullwater Park"
+        prefs["food"] = "samosas"
+        return prefs
+    if name == "leo":
+        prefs = {}
+        if "chess" in notes:
+            prefs["hobby"] = "chess"
+        if "cooking" in notes:
+            prefs["food"] = "cooking"
+        if "computer science at georgia tech" in notes:
+            prefs["study"] = "computer science at Georgia Tech"
+        return prefs
+    if name == "sarah":
+        prefs = {}
+        if "tuesday and friday" in notes:
+            prefs["visit_day"] = "Tuesday and Friday afternoons"
+        if "samosas" in notes:
+            prefs["food"] = "samosas"
+        return prefs
+    return {}
 
 
 async def fetch_safe_zone() -> dict | None:

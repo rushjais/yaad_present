@@ -1,0 +1,30 @@
+{
+  "recommended_keys": [
+    "music",
+    "food",
+    "drink",
+    "hobby",
+    "activity",
+    "place",
+    "color",
+    "tv_show",
+    "book",
+    "study",
+    "work",
+    "pet"
+  ],
+  "aliases": {
+    "music": ["music", "song", "songs", "tunes", "listen to", "listening to", "bollywood"],
+    "food": ["food", "eat", "snack", "meal", "dish", "cooking"],
+    "drink": ["drink", "tea", "chai"],
+    "hobby": ["hobby", "hobbies", "like", "likes", "enjoy", "enjoys", "do for fun"],
+    "activity": ["activity", "activities", "walk", "routine"],
+    "place": ["place", "spot", "park"],
+    "color": ["color", "colour"],
+    "tv_show": ["tv show", "show", "watch", "watches"],
+    "book": ["book", "read", "reads"],
+    "study": ["study", "studies", "school", "college", "major"],
+    "work": ["work", "job", "occupation"],
+    "pet": ["pet", "dog", "cat"]
+  }
+}

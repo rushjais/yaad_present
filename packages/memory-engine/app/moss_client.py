@@ -25,6 +25,13 @@ class _MossWrapper:
         self._client = None
         self._session = None
         self._lock = asyncio.Lock()
+        self._known_doc_ids: set[str] = set()
+
+    def id(self) -> int:
+        return id(self)
+
+    def doc_count(self) -> int:
+        return len(self._known_doc_ids)
 
     async def _ensure(self) -> Any:
         if self._session is not None:
@@ -57,6 +64,7 @@ class _MossWrapper:
             [DocumentInfo(id=ref, text=text, metadata=self._clean_meta(metadata))],
             MutationOptions(upsert=True),
         )
+        self._known_doc_ids.add(ref)
         asyncio.create_task(self._push())
 
     async def upsert_batch(self, items: list[dict]) -> None:
@@ -72,6 +80,7 @@ class _MossWrapper:
             for it in items
         ]
         await session.add_docs(docs, MutationOptions(upsert=True))
+        self._known_doc_ids.update(str(it["id"]) for it in items)
         asyncio.create_task(self._push())
 
     async def query(

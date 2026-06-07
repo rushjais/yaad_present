@@ -96,30 +96,6 @@ async def _groq_normalize(raw_extraction: str) -> dict[str, Any]:
         return {"summary": "", "medications": [], "events": [], "persons": []}
 
 
-def _build_chunk(entity_type: str, payload: dict) -> str:
-    """Mirror main._build_chunk_text so ingested rows look identical in Moss
-    to caregiver-web rows. Kept inline (not imported) to avoid a circular
-    import — main.py imports from this module's endpoint."""
-    name = (payload.get("name") or payload.get("title") or "").strip()
-    notes = (payload.get("notes") or "").strip()
-    if entity_type == "medication":
-        return f"{name} — Amma's medication. {notes}".strip().rstrip(".") + "."
-    if entity_type == "event":
-        return f"{name}. {notes}".strip().rstrip(".") + "."
-    if entity_type == "person":
-        relationship = (payload.get("relationship") or "").strip()
-        parts = [name]
-        if relationship:
-            parts.append(relationship)
-        if notes:
-            parts.append(notes)
-        return ". ".join(s.rstrip(".") for s in parts if s) + "."
-    if entity_type == "story":
-        text = (payload.get("text") or "").strip()
-        return f"Story: {text or notes or name}"
-    return ""
-
-
 async def _write_and_index(entity_type: str, payload: dict, source: str) -> str | None:
     """Write to Supabase + Moss. Returns 'type:uuid' or None on failure.
     Skips silently if the payload has no name/title — Groq sometimes emits
@@ -138,7 +114,10 @@ async def _write_and_index(entity_type: str, payload: dict, source: str) -> str 
         return None
 
     ref = f"{entity_type}:{result['id']}"
-    text = _build_chunk(entity_type, payload)
+    text = ""
+    if entity_type == "story":
+        from .chunks import render
+        text = render(entity_type, payload)
     if text:
         try:
             from .moss_client import moss
