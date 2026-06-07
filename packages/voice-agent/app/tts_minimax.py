@@ -1,12 +1,12 @@
-"""MiniMax TTS service — English.
+"""MiniMax TTS service — English, international endpoint.
 
-Confirmed response shape (2026-06-06):
-  POST https://api.minimax.io/v1/t2a_v2?GroupId={GID}
-  Headers: Authorization: Bearer {MINIMAX_API_KEY}
-  Response: { "data": { "audio": "<hex_string>", "status": 2 },
-              "base_resp": { "status_code": 0, "status_msg": "success" }, ... }
-  Audio field:  data["data"]["audio"]  — hex-encoded MP3 (NOT base64).
-  Domain: api.minimax.io (NOT .chat — matches key issuance region).
+Spec: POST https://api.minimax.io/v1/t2a_v2   (NO GroupId — .io endpoint)
+Headers: Authorization: Bearer {MINIMAX_API_KEY}
+Body fields per official .io OpenAPI:
+  model: "speech-02-hd"
+  output_format: "hex"
+  voice_setting.voice_id: "English_Graceful_Lady"
+Response: data.audio = hex-encoded MP3; base_resp.status_code 0 = OK, 1004 = auth fail.
 """
 
 import io
@@ -17,7 +17,6 @@ import time
 import httpx
 from pydub import AudioSegment  # requires: brew install ffmpeg
 
-# [CONFIRM] pipecat import paths
 from pipecat.frames.frames import (  # type: ignore
     AudioRawFrame,
     Frame,
@@ -30,10 +29,9 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  #
 logger = logging.getLogger(__name__)
 
 MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
-MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "").strip()
-MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "Calm_Woman").strip()  # [CONFIRM]
-MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd").strip()
-MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"
+MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "English_Graceful_Lady").strip()
+MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-02-hd").strip()
+MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"  # NO GroupId for .io endpoint
 OUTPUT_SAMPLE_RATE = 32000
 
 
@@ -73,6 +71,7 @@ class MiniMaxTTSService(FrameProcessor):
             "model": MINIMAX_MODEL,
             "text": text,
             "stream": False,
+            "output_format": "hex",
             "voice_setting": {"voice_id": MINIMAX_VOICE_EN, "speed": 1, "vol": 1, "pitch": 0},
             "audio_setting": {
                 "sample_rate": OUTPUT_SAMPLE_RATE,
@@ -83,7 +82,7 @@ class MiniMaxTTSService(FrameProcessor):
         }
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(
-                f"{MINIMAX_URL}?GroupId={MINIMAX_GROUP_ID}",
+                MINIMAX_URL,  # no GroupId — .io international endpoint
                 headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
                 json=payload,
             )
@@ -92,9 +91,11 @@ class MiniMaxTTSService(FrameProcessor):
 
         base = data.get("base_resp", {})
         if base.get("status_code") != 0:
-            raise ValueError(f"MiniMax error {base.get('status_code')}: {base.get('status_msg')}")
+            raise ValueError(
+                f"MiniMax error {base.get('status_code')}: {base.get('status_msg')} | "
+                f"URL={MINIMAX_URL} | full_keys={list(data.keys())}"
+            )
 
-        # Confirmed field: data["data"]["audio"] — hex-encoded MP3
         audio_hex = (data.get("data") or {}).get("audio", "")
         if not audio_hex:
             raise ValueError(f"No audio in MiniMax response. Keys: {list(data.keys())}")

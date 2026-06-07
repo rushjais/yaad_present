@@ -48,11 +48,9 @@ GROQ_API_KEY = os.environ["GROQ_API_KEY"].strip()
 GROQ_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
 
 MINIMAX_API_KEY = os.environ["MINIMAX_API_KEY"].strip()
-MINIMAX_GROUP_ID = os.environ["MINIMAX_GROUP_ID"].strip()
-MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "male-qn-jingying").strip()
-MINIMAX_VOICE_HI = os.environ.get("MINIMAX_VOICE_HI", "female-shaonv").strip()
-MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd").strip()
-MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"
+MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "English_Graceful_Lady").strip()
+MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-02-hd").strip()
+MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"  # NO GroupId — .io international endpoint
 
 RECORD_SECS = 5
 SAMPLE_RATE = 16000
@@ -137,17 +135,19 @@ async def synthesize(text: str) -> bytes:
       data["data"]["audio"] — hex-encoded MP3 (NOT base64).
     Needs a valid TTS key — current key returns status_code=2049.
     """
-    print(f"  MiniMax voice: {MINIMAX_VOICE_EN!r}")
+    print(f"  MiniMax voice: {MINIMAX_VOICE_EN!r}  model: {MINIMAX_MODEL!r}")
+    print(f"  URL: {MINIMAX_URL}")
     payload = {
         "model": MINIMAX_MODEL,
         "text": text,
         "stream": False,
+        "output_format": "hex",
         "voice_setting": {"voice_id": MINIMAX_VOICE_EN, "speed": 1, "vol": 1, "pitch": 0},
         "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1},
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.post(
-            f"{MINIMAX_URL}?GroupId={MINIMAX_GROUP_ID}",
+            MINIMAX_URL,  # NO GroupId — .io international endpoint
             headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
             json=payload,
         )
@@ -155,11 +155,11 @@ async def synthesize(text: str) -> bytes:
         data = r.json()
 
     base = data.get("base_resp", {})
-    if base.get("status_code") != 0:
-        raise ValueError(
-            f"MiniMax error {base.get('status_code')}: {base.get('status_msg')}\n"
-            f"Response keys: {list(data.keys())}"
-        )
+    code = base.get("status_code")
+    msg = base.get("status_msg")
+    print(f"  ← status_code={code} | status_msg={msg!r} | keys={list(data.keys())}")
+    if code != 0:
+        raise ValueError(f"MiniMax error {code}: {msg}\nResponse keys: {list(data.keys())}")
     audio_hex = (data.get("data") or {}).get("audio", "")
     if not audio_hex:
         raise ValueError(f"No audio field. Response keys: {list(data.keys())}")

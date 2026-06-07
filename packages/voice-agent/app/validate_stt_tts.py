@@ -34,10 +34,9 @@ GROQ_API_KEY = os.environ["GROQ_API_KEY"].strip()
 GROQ_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
 
 MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
-MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "").strip()
-MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "Calm_Woman").strip()
-MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd").strip()
-MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"
+MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "English_Graceful_Lady").strip()
+MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-02-hd").strip()
+MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"  # NO GroupId — .io international endpoint
 
 SAMPLE_RATE = 16000
 
@@ -88,17 +87,21 @@ async def transcribe_wav(wav_bytes: bytes) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 async def minimax_synthesize(text: str) -> tuple[bool, str, int, bytes]:
-    """Returns (ok, status_msg, status_code, audio_bytes)."""
+    """Returns (ok, status_msg, status_code, audio_bytes). Prints full wire details."""
     payload = {
         "model": MINIMAX_MODEL,
         "text": text,
         "stream": False,
+        "output_format": "hex",
         "voice_setting": {"voice_id": MINIMAX_VOICE_EN, "speed": 1, "vol": 1, "pitch": 0},
         "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1},
     }
+    print(f"  → URL:   {MINIMAX_URL}")
+    print(f"  → model: {MINIMAX_MODEL}  voice: {MINIMAX_VOICE_EN}")
+    print(f"  → key prefix: {MINIMAX_API_KEY[:16]}...")
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.post(
-            f"{MINIMAX_URL}?GroupId={MINIMAX_GROUP_ID}",
+            MINIMAX_URL,  # NO GroupId — .io international endpoint
             headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
             json=payload,
         )
@@ -106,6 +109,13 @@ async def minimax_synthesize(text: str) -> tuple[bool, str, int, bytes]:
     base = data.get("base_resp", {})
     code = base.get("status_code", -1)
     msg = base.get("status_msg", "unknown")
+    print(f"  ← HTTP {r.status_code} | status_code={code} | status_msg={msg!r}")
+    print(f"  ← top-level keys: {list(data.keys())}")
+    if "data" in data:
+        d = data["data"]
+        print(f"  ← data keys: {list(d.keys())}")
+        if "audio" in d:
+            print(f"  ← audio length: {len(d['audio'])} hex chars")
     if code != 0:
         return False, msg, code, b""
     audio_hex = (data.get("data") or {}).get("audio", "")
