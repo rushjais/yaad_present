@@ -8,6 +8,7 @@ Works by putting stdin into raw mode (single keypress, no Enter needed).
 Gracefully no-ops if stdin is not a tty (piped, redirected, Docker TTY-less).
 """
 
+import atexit
 import logging
 import sys
 import threading
@@ -40,7 +41,19 @@ def _listen(state: LanguageState) -> None:
         return
 
     fd = sys.stdin.fileno()
+    # Snapshot terminal state before any changes — used by atexit restore too.
     old_settings = termios.tcgetattr(fd)
+
+    def _restore():
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except Exception:
+            pass
+
+    # atexit fires even when pipecat's signal handler kills the process before
+    # this thread's finally block runs — prevents terminal staying in raw mode.
+    atexit.register(_restore)
+
     try:
         tty.setraw(fd)
         while True:
@@ -48,19 +61,15 @@ def _listen(state: LanguageState) -> None:
             if ch == "h":
                 lang = state.toggle()
                 label = "HINDI" if lang == "hi" else "ENGLISH"
-                # \r so the line prints cleanly in raw-mode terminal
+                # \r needed for clean output in raw-mode terminal
                 print(f"\r\n>>> LANGUAGE: {label}\r\n", flush=True)
                 logger.info("Language toggled → %s", label)
             elif ch in ("\x03", "\x04"):
-                # Ctrl-C / Ctrl-D — restore terminal and stop gracefully
                 break
     except Exception as e:
         logger.warning("lang-toggle listener error: %s", e)
     finally:
-        try:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        except Exception:
-            pass
+        _restore()
 
 
 def start_lang_listener(state: LanguageState) -> None:

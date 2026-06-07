@@ -12,12 +12,21 @@ Pipecat 1.3.0 path changes (resolved 2026-06-06):
 import os
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer  # type: ignore
+from pipecat.audio.vad.vad_analyzer import VADParams  # type: ignore
 from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport  # type: ignore
 from livekit.api import AccessToken, VideoGrants  # type: ignore
 
 
 def create_vad() -> SileroVADAnalyzer:
-    return SileroVADAnalyzer()
+    # min_volume=0.3: default 0.6 is too high for AirPods/Bluetooth mics whose
+    # PCM amplitude runs lower than built-in mics — utterances were silently dropped.
+    # stop_secs=0.8: default 0.2 cuts off mid-sentence on any brief pause.
+    return SileroVADAnalyzer(params=VADParams(
+        confidence=0.75,
+        start_secs=0.2,
+        stop_secs=0.8,
+        min_volume=0.6,
+    ))
 
 
 def _make_token(room_name: str) -> str:

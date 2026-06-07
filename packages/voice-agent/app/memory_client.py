@@ -3,12 +3,13 @@
 import os
 import httpx
 
-MEMORY_ENGINE_URL = os.environ.get("MEMORY_ENGINE_URL", "http://localhost:8000")
+_DEFAULT_URL = "http://localhost:8000"
 
 
 class MemoryClient:
     def __init__(self):
-        self._client = httpx.AsyncClient(base_url=MEMORY_ENGINE_URL, timeout=3.0)
+        url = os.environ.get("MEMORY_ENGINE_URL", _DEFAULT_URL).strip()
+        self._client = httpx.AsyncClient(base_url=url, timeout=10.0)
 
     async def query(self, text: str, lang: str) -> dict:
         """POST /memory/query → QueryResponse."""
