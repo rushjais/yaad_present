@@ -1,9 +1,52 @@
 # Track B — Memory Engine · CLAUDE.md
 **Owner: Keshav** · Before you code: re-read this file + root STATUS.md. After you code: update them.
 
-## Current phase: B7.1 — Chunks + τ simplification **complete** ✅ (2026-06-06)
+## Current phase: B7.2 — Category enrichment + rewrite fallback **complete** ✅ (2026-06-06)
 
-43/43 tests green: 15 smoke + 28 robustness. p95 = 22ms server-side.
+39/39 robustness green (added beat 6 — abstract preferences). All five demo
+beats plus the new preference beat ground correctly; anti-confab cases all
+safe-refuse. See robustness scorecard below.
+
+### What B7.2 fixed
+**The bug:** "favorite music" returned safe-refusal even though Amma's seed
+notes literally say *"loves Bollywood songs from the 1960s."* The chunk had
+"Bollywood" but no "music" / "favorite music" / "songs she likes" — semantic
+search couldn't bridge the abstract → specific gap.
+
+**The fix:** two layers.
+1. **Seed-time category-labeled prose** (`scripts/reseed_moss.py` →
+   `_enrich_chunk` via Groq 8b). Person/place/story chunks are rewritten so
+   each preference is led by its category word: `"Music: Amma listens to
+   Bollywood songs from the 1960s. Drinks: Amma loves jasmine tea.
+   Activities: Lullwater Park evening walk."` Moss now matches "music" /
+   "drinks" / "activities" directly. **Cached** in `fixtures/enriched_chunks.json`
+   so server startup pays 0 Groq cost (`--wipe` regenerates the cache).
+2. **Runtime query-rewrite fallback** (`app/retrieval.py` →
+   `_rewrite_and_retry`). If first-pass Moss returns nothing above τ, Groq
+   8b generates 3 anchored paraphrases (entity-locked when intent has named
+   entities) and re-queries Moss. Same τ on the rescue path — no laxer gate.
+   The rewrite Groq prompt also acts as an anti-confab gate: returns
+   `{"queries": []}` for general-knowledge queries.
+3. **Topic-word check.** Rich chunks score high on any "favorite X" / "she X"
+   query. If the query mentions a content noun that doesn't appear in any
+   top chunk (`"color"`, `"sport"`, `"horror"`), refuse. Deterministic,
+   no extra LLM call.
+
+### Robustness scorecard (2026-06-06)
+| Beat | Score |
+|---|---|
+| 1 who-is (grounded variants) | 7/7 |
+| 1 who-is (anti-confab refused) | 5/5 |
+| 2 pills today | 7/7 |
+| 5 relational | 5/5 |
+| 6 preferences (grounded) | 8/8 |
+| 6 preferences (refused) | 3/3 |
+
+p95 latency unchanged on the happy path (cache hit, no LLM). Rewrite-fallback
+path adds ~300ms — only fires when first pass returns 0 above τ; Track A's
+speculative-fire on partial transcripts absorbs the variance.
+
+### B7.1 archive (still-true context)
 
 ### v2 architecture (this is what's live)
 Read `MEMORY_V2_README.md` at repo root for the teammate-facing version.

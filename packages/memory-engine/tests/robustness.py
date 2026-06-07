@@ -10,11 +10,13 @@ Run (server must be on :8000):
 """
 from __future__ import annotations
 
+import os
 import time
 import httpx
 import pytest
 
-BASE = "http://localhost:8000"
+# Override with YAAD_TEST_BASE=http://localhost:8765 etc.
+BASE = os.environ.get("YAAD_TEST_BASE", "http://localhost:8000")
 
 
 def post(path: str, body: dict) -> tuple[dict, float]:
@@ -172,6 +174,47 @@ def test_beat5_relational_grounded(text):
 
 
 # ---------------------------------------------------------------------------
+# Beat 6 — abstract preferences (B7.2 — category enrichment + rewrite fallback)
+#
+# These were the original failure mode: abstract category queries like
+# "favorite music" semantically miss specific facts like "Bollywood from the
+# 1960s" stored in person.notes. The fix is two layers:
+#   1. Seed-time category-labeled prose ("Music: Amma listens to Bollywood…")
+#   2. Runtime query-rewrite fallback when initial Moss returns 0 above τ
+# ---------------------------------------------------------------------------
+PREFERENCES_GROUND = [
+    "favorite music",
+    "what music does she like",
+    "what does Amma enjoy listening to",
+    "what does she eat",
+    "her hobbies",
+    "what does she enjoy",
+    "Bollywood",
+    "what does Leo like",
+]
+# Adversarial: questions about preferences we have NO data for must safe-refuse.
+PREFERENCES_REFUSE = [
+    "what's her favorite color",
+    "what sport does she play",
+    "does she like horror movies",
+]
+
+
+@pytest.mark.parametrize("text", PREFERENCES_GROUND)
+def test_beat6_preferences_grounded(text):
+    d, ms = post("/memory/query", {"text": text, "lang": "en"})
+    print(f"  [G] {text!r:45s} grounded={d['grounded']} conf={d['confidence']} {ms:.0f}ms")
+    assert d["grounded"], f"Expected grounded preference for {text!r} — got {d['answer_draft']!r}"
+
+
+@pytest.mark.parametrize("text", PREFERENCES_REFUSE)
+def test_beat6_preferences_refused(text):
+    d, ms = post("/memory/query", {"text": text, "lang": "en"})
+    print(f"  [R] {text!r:45s} grounded={d['grounded']} conf={d['confidence']} {ms:.0f}ms")
+    assert not d["grounded"], f"Expected safe-refusal for {text!r} — got grounded {d['answer_draft']!r}"
+
+
+# ---------------------------------------------------------------------------
 # Final per-beat scorecard
 # ---------------------------------------------------------------------------
 
@@ -183,6 +226,8 @@ def test_scorecard(capsys):
             "1 who-is (refused)":     WHO_IS_REFUSE,
             "2 pills today":          PILLS_GROUND,
             "5 relational":           RELATIONAL_GROUND,
+            "6 preferences (grounded)": PREFERENCES_GROUND,
+            "6 preferences (refused)": PREFERENCES_REFUSE,
         }
         for name, queries in beats.items():
             ok = 0
