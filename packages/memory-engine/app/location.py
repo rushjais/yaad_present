@@ -10,6 +10,116 @@ from datetime import datetime, timezone
 from .schemas import LocationAction, LocationPingResponse
 
 
+# ---------------------------------------------------------------------------
+# Unanswered-question caregiver alerts
+# ---------------------------------------------------------------------------
+
+_FORMAT_SYSTEM = """You write short SMS messages for a family caregiver of someone with dementia.
+
+Their loved one (Amma) asked the AI companion a question it couldn't answer because the information isn't in her memory profile yet.
+
+Write ONE sentence, under 130 characters, that:
+1. Naturally describes what Amma asked about
+2. Tells the caregiver what specific information to add so Yaad can answer next time
+
+Examples:
+- "Amma asked about her favorite music — add her music preferences to her profile."
+- "Amma asked about her sister Rekha — add details about Rekha to her memory."
+
+No emojis. Plain text only. Output only that one sentence, nothing else."""
+
+
+async def _format_unanswered(query_text: str, openai_api_key: str) -> str:
+    """Use OpenAI to turn an unanswered query into an actionable caregiver SMS."""
+    if not openai_api_key:
+        ts = datetime.now(timezone.utc).strftime("%-I:%M %p UTC")
+        return f"Yaad ({ts}): Amma asked something I couldn't answer — consider adding it to her memory: '{query_text[:80]}'"
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=openai_api_key)
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _FORMAT_SYSTEM},
+                {"role": "user", "content": query_text},
+            ],
+            temperature=0.3,
+            max_tokens=80,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        if text:
+            return text
+    except Exception as e:
+        print(f"[unanswered_alert] format failed: {e!r}")
+    ts = datetime.now(timezone.utc).strftime("%-I:%M %p UTC")
+    return f"Yaad ({ts}): Amma asked something I couldn't answer: '{query_text[:80]}'"
+
+
+def _deliver_sms(contacts: list[dict], body: str) -> list[dict]:
+    """Send `body` to each contact via Gmail SMTP → carrier email-to-SMS gateway.
+    YAAD_DEMO_RECIPIENT_EMAIL overrides per-contact phone_email for demo use."""
+    import os
+    import smtplib
+    import ssl
+    from email.message import EmailMessage
+
+    email_from = os.getenv("EMAIL_FROM", "").strip()
+    app_password = os.getenv("EMAIL_APP_PASSWORD", "").strip().replace(" ", "")
+    demo_recipient = os.getenv("YAAD_DEMO_RECIPIENT_EMAIL", "").strip()
+    if not (email_from and app_password):
+        return [{"contact": None, "to": None, "ok": False,
+                 "error": "EMAIL_FROM / EMAIL_APP_PASSWORD not set"}]
+
+    results: list[dict] = []
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    try:
+        smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx, timeout=15)
+        smtp.login(email_from, app_password)
+    except Exception as e:
+        return [{"contact": None, "to": None, "ok": False,
+                 "error": f"SMTP login failed: {e!r}"}]
+
+    sent_to: set[str] = set()
+    try:
+        for c in contacts:
+            to = demo_recipient or (c.get("phone_email") or "").strip()
+            if not to:
+                results.append({"contact": c.get("name"), "to": None,
+                                "ok": False, "error": "no phone_email"})
+                continue
+            if to in sent_to:
+                continue  # same number already received this message
+            sent_to.add(to)
+            msg = EmailMessage()
+            msg.set_content(body)
+            msg["Subject"] = ""
+            msg["From"] = email_from
+            msg["To"] = to
+            try:
+                smtp.send_message(msg)
+                results.append({"contact": c.get("name"), "to": to, "ok": True})
+            except Exception as e:
+                results.append({"contact": c.get("name"), "to": to,
+                                "ok": False, "error": repr(e)})
+    finally:
+        try:
+            smtp.quit()
+        except Exception:
+            pass
+    return results
+
+
+async def send_unanswered_alert(query_text: str, contacts: list[dict]) -> list[dict]:
+    """Text caregivers when Yaad can't answer Amma's question so they can add the info."""
+    from .config import settings
+    body = await _format_unanswered(query_text, settings.openai_api_key)
+    return _deliver_sms(contacts, body)
+
+
 def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     R = 6_371_000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)

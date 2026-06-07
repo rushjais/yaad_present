@@ -311,6 +311,13 @@ async def fetch_contacts_ordered(ids: list[str]) -> list[dict]:
     return sorted(rows, key=lambda r: order.get(r["id"], 999))
 
 
+async def fetch_reassurance_contacts() -> list[dict]:
+    """All persons with is_reassurance_contact=True — used for unanswered-query alerts."""
+    client = _client()
+    res = client.table("persons").select("*").eq("is_reassurance_contact", True).execute()
+    return res.data or []
+
+
 async def store_interaction(record: dict) -> None:
     client = _client()
     client.table("interactions").insert({

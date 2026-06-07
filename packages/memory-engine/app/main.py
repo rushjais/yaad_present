@@ -5,6 +5,7 @@ Real implementation wired in progressively through B1–B5.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from datetime import date, datetime, timezone
@@ -50,6 +51,19 @@ def _maybe_fixture(exc: Exception, fixture: Any) -> Any:
     if settings.demo_mode:
         return fixture
     raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def _alert_unanswered(query_text: str) -> None:
+    """Background task: text caregivers when the memory engine can't answer Amma."""
+    try:
+        from .db import fetch_reassurance_contacts
+        from .location import send_unanswered_alert
+        contacts = await fetch_reassurance_contacts()
+        if contacts:
+            results = await send_unanswered_alert(query_text, contacts)
+            print(f"[unanswered_alert] sent for '{query_text[:60]}': {results}")
+    except Exception as e:
+        print(f"[unanswered_alert] failed: {e!r}")
 
 
 @app.on_event("startup")
@@ -196,7 +210,10 @@ async def memory_query(req: MemoryQueryRequest):
         else:
             from .retrieval import query_memory
             result = await query_memory(req.text, req.lang)
-        return MemoryQueryResponse(**result)
+        resp = MemoryQueryResponse(**result)
+        if not resp.grounded and not resp.items:
+            asyncio.create_task(_alert_unanswered(req.text))
+        return resp
     except Exception as e:
         return _maybe_fixture(e, FIXTURE_QUERY_RESPONSE)
 
@@ -210,7 +227,10 @@ async def memory_temporal(req: MemoryQueryRequest):
         else:
             from .temporal import query_temporal
             result = await query_temporal(req.text, req.lang)
-        return MemoryQueryResponse(**result)
+        resp = MemoryQueryResponse(**result)
+        if not resp.grounded and not resp.items:
+            asyncio.create_task(_alert_unanswered(req.text))
+        return resp
     except Exception as e:
         return _maybe_fixture(e, FIXTURE_TEMPORAL_RESPONSE)
 
