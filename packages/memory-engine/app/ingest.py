@@ -73,27 +73,45 @@ Rules:
 - persons.relationship: use 'doctor' / 'cardiologist' / 'nurse' for clinical roles; never guess family ties."""
 
 
-async def _groq_normalize(raw_extraction: str) -> dict[str, Any]:
-    """Normalize Unsiloed extraction → schema-shaped records using OpenAI."""
-    if not settings.openai_api_key:
-        return {"summary": "", "medications": [], "events": [], "persons": []}
+async def _normalize_extraction(raw_extraction: str) -> dict[str, Any]:
+    """Normalize Unsiloed extraction into schema-shaped records."""
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
-        resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": _GROQ_NORMALIZE_SYSTEM},
-                {"role": "user", "content": raw_extraction},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=1500,
-        )
-        return json.loads(resp.choices[0].message.content or "{}")
+        if settings.openai_api_key:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=settings.openai_api_key)
+            resp = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": _GROQ_NORMALIZE_SYSTEM},
+                    {"role": "user", "content": raw_extraction},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0,
+                max_tokens=1500,
+            )
+            return json.loads(resp.choices[0].message.content or "{}")
+
+        if settings.groq_api_key:
+            from groq import AsyncGroq
+            client = AsyncGroq(api_key=settings.groq_api_key)
+            resp = await client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": _GROQ_NORMALIZE_SYSTEM},
+                    {"role": "user", "content": raw_extraction},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0,
+                max_tokens=1500,
+            )
+            return json.loads(resp.choices[0].message.content or "{}")
     except Exception as e:
         print(f"[ingest] normalize failed: {e!r}")
-        return {"summary": "", "medications": [], "events": [], "persons": []}
+    return {"summary": "", "medications": [], "events": [], "persons": []}
+
+
+async def _groq_normalize(raw_extraction: str) -> dict[str, Any]:
+    return await _normalize_extraction(raw_extraction)
 
 
 async def _write_and_index(entity_type: str, payload: dict, source: str) -> str | None:
@@ -149,7 +167,7 @@ async def ingest_document(file_bytes: bytes, filename: str,
 
     doc_id = await unsiloed.upload(file_bytes, filename, content_type)
     raw = await unsiloed.chat(doc_id, _UNSILOED_PROMPT)
-    normalized = await _groq_normalize(raw)
+    normalized = await _normalize_extraction(raw)
 
     created: list[str] = []
     source = f"unsiloed:{filename}"
