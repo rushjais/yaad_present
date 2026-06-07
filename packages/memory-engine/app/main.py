@@ -263,19 +263,12 @@ async def _resolve_event_participants(payload: dict) -> list[str]:
     resolved = list(existing)
     seen = set(existing)
     for candidate in candidates:
-        hits = await moss.query(candidate, top_k=3)
-        if not hits:
-            continue
-        top = hits[0]
-        meta = top.get("metadata", {}) or {}
-        if meta.get("type") != "person":
-            continue
-        if float(top.get("score", 0.0)) < PERSON_RESOLUTION_THRESHOLD:
-            continue
-        if not _hit_confirms_person_name(candidate, top):
+        hits = await moss.query(candidate, top_k=8)
+        person_hit = _first_person_hit(candidate, hits)
+        if not person_hit:
             continue
 
-        person_id = top["id"].split(":", 1)[-1]
+        person_id = person_hit["id"].split(":", 1)[-1]
         if person_id not in seen:
             resolved.append(person_id)
             seen.add(person_id)
@@ -315,6 +308,19 @@ async def _event_person_candidates(text: str) -> list[str]:
         pass
 
     return candidates[:12]
+
+
+def _first_person_hit(candidate: str, hits: list[dict]) -> dict | None:
+    for hit in hits:
+        meta = hit.get("metadata", {}) or {}
+        if meta.get("type") != "person":
+            continue
+        if float(hit.get("score", 0.0)) < PERSON_RESOLUTION_THRESHOLD:
+            continue
+        if not _hit_confirms_person_name(candidate, hit):
+            continue
+        return hit
+    return None
 
 
 def _contains_name(text: str, name: str) -> bool:

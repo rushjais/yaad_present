@@ -166,7 +166,7 @@ yaad/
 ```
 MOSS_API_KEY=        # [CONFIRM on-device/WASM vs cloud]
 MOSS_INDEX=yaad_amma
-DEEPGRAM_API_KEY=
+GROQ_API_KEY=
 MINIMAX_API_KEY=     MINIMAX_GROUP_ID=   # TTS Hindi/English [CONFIRM voice id]
 LIVEKIT_URL=  LIVEKIT_API_KEY=  LIVEKIT_API_SECRET=
 TRUEFOUNDRY_API_KEY= # gateway→model [CONFIRM base_url+model]
@@ -197,9 +197,9 @@ Turn Moss retrieval into a grounded, temporal, traversable memory graph behind t
 
 ## 6. TRACK A — Voice Agent (LiveKit + Pipecat + MiniMax) [OWNER: Rushil]
 Warm, low-latency, barge-in voice loop that grounds every answer. **Keep `packages/voice-agent/CLAUDE.md` + STATUS.md current.**
-Pipeline: `LiveKit → VAD → Deepgram STT → intent/lang → memory_client.query()/temporal() (speculative) → LLM (TrueFoundry) w/ grounding prompt → MiniMax TTS → playback`, **barge-in** on VAD.
+Pipeline: `LiveKit → VAD → Groq Whisper STT → intent/lang → memory_client.query()/temporal() (speculative) → LLM (TrueFoundry) w/ grounding prompt → MiniMax TTS → playback`, **barge-in** on VAD.
 **Grounding system prompt:** "You are Yaad, a warm companion for someone with memory loss. State ONLY facts in the provided MEMORY context. If empty/low-confidence, say you're not sure and offer to check with the family. Never invent people/events/dates. Short, calm, warm. Match the user's language (English/Hindi/Hinglish)."
-- **A0:** pipeline vs memory stubs (unblock early). **A1:** Deepgram + MiniMax echo loop [CONFIRM both; CONFIRM MiniMax Hindi voice]. **A2:** real memory calls + grounding + barge-in. **A3:** latency pass (speculative + streaming) → <~1s; build the latency overlay. **A4:** `fallback.py` fixtures on timeout. **A5:** proactive reminders via `/reminders/due` (§12).
+- **A0:** pipeline vs memory stubs (unblock early). **A1:** Groq + MiniMax echo loop [CONFIRM both; CONFIRM MiniMax Hindi voice]. **A2:** real memory calls + grounding + barge-in. **A3:** latency pass (speculative + streaming) → <~1s; build the latency overlay. **A4:** `fallback.py` fixtures on timeout. **A5:** proactive reminders via `/reminders/due` (§12).
 **Acceptance:** "who is Leo?" warm + grounded <~1s; interrupt halts TTS; kill memory-engine → 5 beats still answer from fixtures; Hindi Q → Hindi A; **docs match code.**
 
 ---
@@ -258,4 +258,4 @@ Moss = hero (graph layer + instant updates + on-device) · MiniMax = voice (Hind
 Present Yaad as a capability *built on* Moss (a memory graph), not an app that uses it. Land one flawless live signature beat (add-fact-live). Emotion → engineering in the same 90s. Show, don't tell (let it talk). Make it adopt-able ("a pattern any Moss dev could reuse").
 
 ## 20. [CONFIRM] at the event
-Moss (on-device/WASM + instant upsert + cross-lingual embeddings + SDK) · MiniMax (Hindi voice id + streaming TTS + group id) · Deepgram / LiveKit / Pipecat exact calls · TrueFoundry base_url + model · Unsiloed parse API · push vs Twilio for alerts.
+Moss (on-device/WASM + instant upsert + cross-lingual embeddings + SDK) · MiniMax (Hindi voice id + streaming TTS + group id) · Groq / LiveKit / Pipecat exact calls · TrueFoundry base_url + model · Unsiloed parse API · push vs Twilio for alerts.
