@@ -47,9 +47,12 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - Still needs: TrueFoundry base_url [CONFIRM] (unused by memory engine; tracked here for visibility)
 
 ### Track C — Caregiver Web (Raghav)
-- Phase: C3 — graph + timeline (next up)
-- Done: C0 ✅ (Next.js 15 scaffold, lib/types.ts, lib/api.ts all 8 endpoints, page stubs, build green) · C1 ✅ (add-memory forms: person/event/medication/story → POST /memory/write; tested live at localhost:3000; one-click fast, success/error feedback)
-- Next: C3 graph view (react-force-graph-2d, SSR-disabled) + timeline (GET /memory/timeline)
+- Phase: C4 — care dashboard (next up)
+- Done: C0 ✅ · C1 ✅ · C3 ✅ (graph + timeline)
+  - C3: `/graph` — react-force-graph-2d, SSR-disabled, Supabase direct query, 5 clean nodes (Leo/Sarah/Amma/Home/Park), 5 edges
+  - C3: `/timeline` — date picker, GET /memory/timeline proxy, vertical timeline blocks
+  - `.env.local` symlinks to root `.env` for server-side Supabase access
+- Next: C4 care dashboard → C5 safety → C6 architecture diagram
 - Do NOT re-run seed_amma.py — data is already in Supabase
 
 ## API keys status
