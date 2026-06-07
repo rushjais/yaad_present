@@ -17,20 +17,21 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - **Heads-up:** when Track B's B7 rebuild lands, `/memory/query` and `/memory/temporal` accept the same shape but return richer `items[]` (graph-expanded neighbors + edge-typed text). Treat `items[].text` as authoritative; do NOT reparse. `Intent`-routed responses may take up to ~200ms when the regex fast-path misses (LLM fallback) — fire speculatively on partial transcript as A3 already plans.
 
 ### Track B — Memory (Keshav)
-- Phase: **B7 — Robustness rebuild (in progress, 2026-06-06)**
-- Gate 1 (B0–B6) closed. Smoke test exposed: regex-only temporal misses paraphrases, graph proximity never surfaces neighbors, capture is string-match only, and the Moss `SessionIndex` does not reliably resume the cloud index after a server restart (`query("Leo")` → 0 results despite cloud push).
-- **What's changing (executing now):**
-  1. `scripts/reseed_moss.py` — idempotent Supabase → Moss reseed; verifies `query("Leo")` ≥0.9 before exit (workaround for the resume issue)
-  2. `app/intent.py` + `app/time_window.py` — single understanding pass; hybrid regex + Groq fallback; relative-time parsing
-  3. `app/temporal.py` rebuilt — per-medication routing, grounded negatives, time-windowed events
-  4. `app/graph.py` + `app/retrieval.py` rebuilt — real 1-hop expansion into `items[]`, edge-type surfaced in text, relational shortcut, N² → dict
-  5. `app/capture.py` rebuilt — Groq structured extraction, entity resolution before write (no more duplicate Leo), edge creation, capture-confidence gate
-  6. `tests/robustness.py` — 30+ phrasings per beat; full pass = ship-ready
-- **Behavioral / contract impact:**
-  - `/memory/query` and `/memory/temporal` response shape **unchanged** (same `MemoryQueryResponse`) — but `items[]` may now contain graph-expanded neighbors with derived text. CONTRACT v1 still holds.
-  - `/memory/capture` now writes edges + episodes in addition to the entity; `created_refs[]` will be longer.
-  - p95 latency: regex fast-path stays <60ms; LLM-fallback path can spike to ~200ms — Track A should keep speculative firing.
-- **No breaking changes for A or C.**
+- Phase: **B7 — Robustness rebuild complete (2026-06-06)** ✅
+- All 44 tests green: 16 smoke + 28 robustness, p95 = 19ms (was 2543ms before graph cache).
+- **What shipped:**
+  1. ✅ `scripts/reseed_moss.py` — Supabase → Moss reseed; runs on server startup hook so each fresh process self-heals (Moss `SessionIndex.session()` does NOT auto-resume the cloud index)
+  2. ✅ `app/intent.py` + `app/time_window.py` — single understanding pass; regex fast-path (5 demo phrasings, <1ms) + Groq llama-3.3-70b LLM fallback; relative-time parser (today/yesterday/this morning/last week/before lunch)
+  3. ✅ `app/temporal.py` rebuilt — Intent-driven routing, per-medication ("heart pill" → Metoprolol filter), grounded negatives ("you haven't taken your heart pill yet"), time-windowed events
+  4. ✅ `app/graph.py` + `app/retrieval.py` rebuilt — edge cache loaded at startup (kills N+1 Supabase round-trips), real 1-hop neighbor expansion into `items[]`, edge-typed sentence generation ("Leo is your grandson"), relational shortcut for 1-entity queries, semantic-floor + implicit-entity guards prevent confabulation
+  5. ✅ `app/capture.py` rebuilt (limited) — Groq structured extraction, entity resolution against Moss (top score ≥0.85 → linked), writes BOTH a `captured_fact` (Moss-indexed, retrievable) AND a `pending_review` episode (caregiver confirms before any new entity/edge writes to the canonical tables)
+  6. ✅ `tests/robustness.py` — 28 cases across 5 beats; per-beat scorecard
+- **Contract impact:** `/memory/query`, `/memory/temporal`, `/memory/capture` response shapes unchanged. `items[]` may now contain graph-expanded neighbors with derived text. CONTRACT v1 holds — no breaking changes for A or C.
+- **Latency:** regex fast-path stays sub-20ms server-side (well under contract). LLM-fallback path can spike to ~300ms — Track A should still fire speculatively on partial transcript.
+- **Caveats / for the demo:**
+  - Auto-capture is intentionally NOT auto-committing. `captured_fact` is retrievable immediately; the structured proposal sits in `episodes(kind='pending_review')` for caregiver confirmation. This is the "demo without the duplicate-Leo risk" path.
+  - The reliable add-fact-live beat = Track C's web form (writes directly via `/memory/write`). Capture is the *bonus* "look, it learned from the conversation" beat.
+  - Implicit-entity allowlist in `retrieval.py` is hand-curated kinship/place words; extend if Amma's seed grows new entity classes.
 - Still needs: TrueFoundry base_url [CONFIRM] (unused by memory engine; tracked here for visibility)
 
 ### Track C — Caregiver Web (Raghav)

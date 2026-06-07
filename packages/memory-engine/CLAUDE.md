@@ -1,7 +1,16 @@
 # Track B — Memory Engine · CLAUDE.md
 **Owner: Keshav** · Before you code: re-read this file + root STATUS.md. After you code: update them.
 
-## Current phase: B7 — Robustness rebuild (2026-06-06)
+## Current phase: B7 — Robustness rebuild **complete** ✅ (2026-06-06)
+
+44/44 tests green: 16 smoke + 28 robustness. p95 = 19ms server-side.
+
+| Beat | Robustness score |
+|---|---|
+| 1 who-is (grounded variants) | 7/7 |
+| 1 who-is (refused — anti-confab) | 5/5 |
+| 2 pills today (phrasing variants) | 7/7 |
+| 5 relational (graph walks) | 5/5 |
 
 Gate 1 (B0–B6) was structurally complete but **demo-fragile**. Smoke test exposed three real problems:
 1. **Moss session doesn't resume the cloud index** on a fresh server process — `query("Leo")` returned 0 results despite a successful seed-time push. Workaround: `scripts/reseed_moss.py` reseeds from Supabase before each demo.

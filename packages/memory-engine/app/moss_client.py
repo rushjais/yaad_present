@@ -101,6 +101,15 @@ class _MossWrapper:
                     meta = json.loads(meta)
                 except Exception:
                     meta = {}
+            # _clean_meta json-serialized nested dicts (Moss only accepts str→str).
+            # Re-parse so callers see the original structure (e.g. provenance dict).
+            if isinstance(meta, dict):
+                for k, v in list(meta.items()):
+                    if isinstance(v, str) and v.startswith(("{", "[")):
+                        try:
+                            meta[k] = json.loads(v)
+                        except Exception:
+                            pass
             out.append({"id": doc.id, "text": doc.text or "", "score": doc.score, "metadata": meta})
         return out
 

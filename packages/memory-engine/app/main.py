@@ -33,6 +33,33 @@ from .schemas import (
 
 app = FastAPI(title="Yaad Memory Engine", version="0.1.0")
 
+
+@app.on_event("startup")
+async def _reseed_moss_on_startup() -> None:
+    """Repopulate the in-process Moss session from Supabase.
+
+    Moss `SessionIndex.session(index_name=...)` does NOT reliably resume the
+    cloud index in a fresh process — queries return 0 results until docs are
+    added to the in-memory session. The fix is to push the canonical Supabase
+    state into this process's session at startup. ~3-5s cost, self-healing.
+
+    Skipped if YAAD_SKIP_RESEED=1 (useful for tests that don't need data).
+    """
+    import os
+    if os.environ.get("YAAD_SKIP_RESEED") == "1":
+        return
+    try:
+        import sys
+        scripts_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts")
+        scripts_dir = os.path.abspath(scripts_dir)
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        from reseed_moss import reseed_moss  # type: ignore
+        rc = await reseed_moss(verify=False, verbose=False)
+        print(f"[startup] Moss session reseeded (rc={rc})")
+    except Exception as e:
+        print(f"[startup] Moss reseed failed: {e!r}")
+
 # ---------------------------------------------------------------------------
 # Lazy-imported real modules (wired after Gate 0)
 # ---------------------------------------------------------------------------
