@@ -30,7 +30,7 @@ export default function GraphPage() {
     <div>
       <h1 className="text-2xl font-semibold mb-1">Memory Graph</h1>
       <p className="text-stone-500 text-sm mb-6">
-        People and places in Amma&apos;s life, connected by relationships.
+        The structure of Amma&apos;s memory — people, places, and the relationships between them.
       </p>
 
       {loading && (
