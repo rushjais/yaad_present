@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ENGINE_URL = process.env.MEMORY_ENGINE_URL ?? "http://localhost:8000";
 
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 // Disable Next.js body parsing — we forward raw multipart to the engine.
 export const config = { api: { bodyParser: false } };
 
@@ -23,7 +26,13 @@ export async function POST(req: NextRequest) {
       // No Content-Type header — fetch sets it automatically with boundary
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text || `Memory engine returned ${res.status}` };
+    }
     return NextResponse.json(data, { status: res.status });
   } catch (err) {
     console.error("[ingest/document proxy]", err);
