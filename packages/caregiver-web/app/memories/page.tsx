@@ -76,7 +76,7 @@ export default function MemoriesPage() {
 
   function onEvent(e: React.FormEvent) {
     e.preventDefault();
-    const start_ts = new Date(`${event.date}T${event.time}`).toISOString();
+    const start_ts = new Date(`${event.date}T${event.time}:00Z`).toISOString();
     const payload: EventPayload = {
       title:    event.title.trim(),
       kind:     event.kind,
