@@ -52,7 +52,7 @@ MINIMAX_GROUP_ID = os.environ["MINIMAX_GROUP_ID"].strip()
 MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "male-qn-jingying").strip()
 MINIMAX_VOICE_HI = os.environ.get("MINIMAX_VOICE_HI", "female-shaonv").strip()
 MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd").strip()
-MINIMAX_URL = "https://api.minimax.chat/v1/t2a_v2"  # [CONFIRM]
+MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"
 
 RECORD_SECS = 5
 SAMPLE_RATE = 16000

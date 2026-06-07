@@ -29,8 +29,8 @@ from pipecat.frames.frames import (  # type: ignore
     Frame,
     TranscriptionFrame,
     UserAudioRawFrame,
-    UserStartedSpeakingFrame,
-    UserStoppedSpeakingFrame,
+    VADUserStartedSpeakingFrame,
+    VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # type: ignore
 
@@ -72,7 +72,7 @@ class GroqWhisperSTTService(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
-        if isinstance(frame, UserStartedSpeakingFrame):
+        if isinstance(frame, VADUserStartedSpeakingFrame):
             # Cancel any stale transcription from a previous utterance (barge-in).
             if self._task and not self._task.done():
                 self._task.cancel()
@@ -85,7 +85,7 @@ class GroqWhisperSTTService(FrameProcessor):
             self._buffer.extend(frame.audio)
             # Audio consumed here — not pushed downstream.
 
-        elif isinstance(frame, UserStoppedSpeakingFrame):
+        elif isinstance(frame, VADUserStoppedSpeakingFrame):
             self._buffering = False
             if self._buffer:
                 self._task = asyncio.create_task(self._transcribe(bytes(self._buffer)))

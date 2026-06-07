@@ -1,17 +1,12 @@
-"""MiniMax TTS service — English (Hindi suppressed until key confirmed).
+"""MiniMax TTS service — English.
 
-Confirmed response shape (from probe 2026-06-06):
-  POST https://api.minimax.chat/v1/t2a_v2?GroupId={GID}
-  Response JSON: { "data": { "audio": "<hex_string>", "status": 2 },
-                   "base_resp": { "status_code": 0, "status_msg": "success" },
-                   "trace_id": "...", ... }
-  Audio field:  data["data"]["audio"]  — hex-encoded MP3 bytes (NOT base64).
-
-[CONFIRM] still open:
-- Valid API key: current key returns status_code=2049 (invalid api key).
-  Need a fresh MiniMax TTS key from portal.minimax.chat or sponsor table.
-- English voice_id — default 'Calm_Woman' based on MiniMax public docs;
-  confirm against available voices for the provisioned account.
+Confirmed response shape (2026-06-06):
+  POST https://api.minimax.io/v1/t2a_v2?GroupId={GID}
+  Headers: Authorization: Bearer {MINIMAX_API_KEY}
+  Response: { "data": { "audio": "<hex_string>", "status": 2 },
+              "base_resp": { "status_code": 0, "status_msg": "success" }, ... }
+  Audio field:  data["data"]["audio"]  — hex-encoded MP3 (NOT base64).
+  Domain: api.minimax.io (NOT .chat — matches key issuance region).
 """
 
 import io
@@ -38,7 +33,7 @@ MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
 MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "").strip()
 MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "Calm_Woman").strip()  # [CONFIRM]
 MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd").strip()
-MINIMAX_URL = "https://api.minimax.chat/v1/t2a_v2"
+MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"
 OUTPUT_SAMPLE_RATE = 32000
 
 

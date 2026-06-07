@@ -7,11 +7,11 @@
 - Phase: **A2 ready — agent starts clean, LLM + LiveKit confirmed**
 - **Agent startup:** ✅ `LLM provider: TrueFoundry (openai/gpt-4o-mini @ https://gateway.truefoundry.ai)` — all pipeline processors link, LiveKit connecting
 - **Groq STT:** ✅ English 0.37s exact transcript
-- **MiniMax TTS:** ✗ status 1004 — auth format rejected. Try `Authorization: {key}` (no Bearer) or get TTS-specific key.
-- **LLM:** ✅ TrueFoundry configured and confirmed
-- **pipecat 1.3.0 import paths:** ✅ fixed — `pipecat.transports.livekit.transport`, `pipecat.audio.vad.silero`
-- **Run command on this machine:** `arch -arm64 python3 -m app.agent` (universal binary issue — must force arm64)
-- **VAD:** not yet wired — pipecat 1.3.0 removed VAD from transport params; needs `VADController` (A3)
+- **MiniMax TTS:** ✗ key lacks T2A access (status 1004). Auth format confirmed correct: Bearer, GroupId in URL, domain `api.minimax.io`. Key needs TTS permissions.
+- **LLM:** ✅ TrueFoundry (`openai/gpt-4o-mini @ https://gateway.truefoundry.ai`)
+- **VAD:** ✅ `VADProcessor` wired in pipeline, Silero model loaded, emitting `VADUserStartedSpeakingFrame`/`VADUserStoppedSpeakingFrame`
+- **LiveKit:** ✅ fully connected, audio input running
+- **Run command on this machine:** `arch -arm64 python3 -m app.agent`
 
 ## Language scope
 **English only.** Always pass `"lang": "en"`. Hindi deferred.

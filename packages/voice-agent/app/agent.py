@@ -32,6 +32,7 @@ from pipecat.frames.frames import (  # type: ignore
 from pipecat.pipeline.pipeline import Pipeline  # type: ignore
 from pipecat.pipeline.runner import PipelineRunner  # type: ignore
 from pipecat.pipeline.task import PipelineParams, PipelineTask  # type: ignore
+from pipecat.processors.audio.vad_processor import VADProcessor  # type: ignore
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # type: ignore
 
 from .fallback import get_fixture
@@ -39,7 +40,7 @@ from .llm import create_llm
 from .memory_client import MemoryClient
 from .reminders_client import poll_reminders
 from .stt_groq import create_stt
-from .transports import create_transport
+from .transports import create_transport, create_vad
 from .tts_minimax import MiniMaxTTSService
 
 load_dotenv()
@@ -202,6 +203,7 @@ class SentenceAggregator(FrameProcessor):
 async def run_agent(room_name: str) -> None:
     tracker = LatencyTracker()
     transport = create_transport(room_name)
+    vad = VADProcessor(vad_analyzer=create_vad())
     stt = create_stt(tracker=tracker)
     memory_client = MemoryClient()
     llm = create_llm()
@@ -211,7 +213,8 @@ async def run_agent(room_name: str) -> None:
 
     pipeline = Pipeline(
         [
-            transport.input(),   # LiveKit audio in
+            transport.input(),   # LiveKit audio in → UserAudioRawFrame
+            vad,                 # VADProcessor → VADUserStartedSpeakingFrame / VADUserStoppedSpeakingFrame
             stt,                 # Groq Whisper STT → TranscriptionFrame
             memory_processor,    # memory + LLM → TextFrame (streaming)
             sentence_agg,        # buffer into sentences

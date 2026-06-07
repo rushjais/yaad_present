@@ -37,7 +37,7 @@ MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "").strip()
 MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "").strip()
 MINIMAX_VOICE_EN = os.environ.get("MINIMAX_VOICE_EN", "Calm_Woman").strip()
 MINIMAX_MODEL = os.environ.get("MINIMAX_MODEL", "speech-01-hd").strip()
-MINIMAX_URL = "https://api.minimax.chat/v1/t2a_v2"
+MINIMAX_URL = "https://api.minimax.io/v1/t2a_v2"
 
 SAMPLE_RATE = 16000
 
