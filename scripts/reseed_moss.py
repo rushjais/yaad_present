@@ -123,6 +123,91 @@ def _build_relations_for(ref: str,
     return out
 
 
+# ---------------------------------------------------------------------------
+# B7.2 — Category enrichment.
+#
+# Why: semantic search misses abstract category queries ("favorite music")
+# when the underlying fact is specific ("Bollywood songs from the 1960s").
+# The chunk has no category cue, so the embedding doesn't bridge.
+#
+# Fix: same pattern as B7.1's relationship-baking — rewrite the chunk text
+# so categories surface as natural prose. Groq does the rewrite once at seed
+# time (offline, no hot-path cost), then Moss embedding does the rest.
+#
+# Skip via YAAD_SKIP_ENRICHMENT=1 (faster reseed, but "favorite music"-style
+# queries fall through to retrieval.py's runtime rewrite fallback).
+# ---------------------------------------------------------------------------
+
+_ENRICH_SYSTEM = """You rewrite a memory chunk so each fact is labeled with its category as a
+short topic lead. This helps a semantic search engine match abstract category
+queries ("favorite music", "what does she eat", "her hobbies") to the right
+specific fact.
+
+CRITICAL OUTPUT FORMAT — each preference becomes its own short sentence
+starting with the CATEGORY WORD, then a colon or comma, then the fact:
+
+  "Bollywood songs from the 1960s"  → "Music: Amma listens to Bollywood songs from the 1960s."
+  "jasmine tea"                      → "Drinks: Amma loves jasmine tea."
+  "evening walk at Lullwater Park"   → "Activities: Amma's evening walk at Lullwater Park."
+  "Loves chess and cooking"          → "Hobbies: chess and cooking."
+  "samosas"                          → "Food: samosas."
+  "studies CS at Georgia Tech"       → "Studies: computer science at Georgia Tech."
+
+Category words you may use (pick the most specific):
+  Music · Songs · Food · Drinks · Hobbies · Activities · Walks · Reading · Books · Studies · Work · Family · Friends · Pets · Home · Routine
+
+DO NOT use the bland "favorite X" pattern repeatedly — it makes all preference
+chunks look semantically identical. Use the specific category word as the lead.
+
+Other rules:
+- Preserve every fact. Do not invent. Output prose only (no JSON, no tags).
+- Identity facts (who someone is, their relationships) stay in normal prose:
+  "Leo is Amma's grandson, 22, studies CS at Georgia Tech."
+- 2-5 sentences total. Concise."""
+
+
+async def _enrich_chunk(text: str) -> str:
+    """Rewrite a chunk via Groq to surface category cues. Returns the original
+    text on any failure (never blocks the seed).
+    """
+    if os.environ.get("YAAD_SKIP_ENRICHMENT") == "1":
+        return text
+    if not text or len(text) < 20:
+        return text
+    pkg = os.path.join(os.path.dirname(__file__), "..", "packages", "memory-engine")
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    try:
+        from app.config import settings  # type: ignore
+        from groq import AsyncGroq
+    except Exception:
+        return text
+    if not settings.groq_api_key:
+        return text
+    try:
+        client = AsyncGroq(api_key=settings.groq_api_key)
+        # 8b is sufficient for this paraphrase task and runs on a separate
+        # TPD quota from 70b (matters when the 70b daily limit is hit).
+        resp = await client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": _ENRICH_SYSTEM},
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=400,
+        )
+        out = (resp.choices[0].message.content or "").strip()
+        # Defensive: never accept empty or 10x-shorter rewrites (would mean
+        # Groq dropped facts).
+        if len(out) < max(20, len(text) // 4):
+            return text
+        return out
+    except Exception as e:
+        print(f"  [enrich] skipped on error: {e!r}")
+        return text
+
+
 def _person_text(p: dict, relations: list[str]) -> str:
     aliases = p.get("aliases") or []
     parts: list[str] = [p["name"]]
@@ -164,7 +249,37 @@ def _story_text(s: dict, name_by_ref: dict[str, str]) -> str:
     return f"Story{about}: {s.get('text', '')}"
 
 
-async def build_moss_items() -> list[dict]:
+# Enrichment cache: ref → enriched text. Written after a --wipe reseed,
+# read on every subsequent reseed (including server startup) so we never
+# pay the ~12s Groq cost on hot paths. Lives in the repo so teammates and
+# CI share the same cache.
+_ENRICH_CACHE_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "fixtures", "enriched_chunks.json"
+)
+
+
+def _load_enrich_cache() -> dict[str, str]:
+    try:
+        with open(_ENRICH_CACHE_PATH) as f:
+            return json.load(f) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"  [enrich-cache] load failed: {e!r}")
+        return {}
+
+
+def _save_enrich_cache(cache: dict[str, str]) -> None:
+    try:
+        os.makedirs(os.path.dirname(_ENRICH_CACHE_PATH), exist_ok=True)
+        with open(_ENRICH_CACHE_PATH, "w") as f:
+            json.dump(cache, f, indent=2, sort_keys=True)
+        print(f"  [enrich-cache] saved {len(cache)} entries → {os.path.basename(_ENRICH_CACHE_PATH)}")
+    except Exception as e:
+        print(f"  [enrich-cache] save failed: {e!r}")
+
+
+async def build_moss_items(*, enrich: bool = False) -> list[dict]:
     """Read Supabase, dedupe, and return canonical Moss items.
     Importable from the server's startup hook.
     """
@@ -194,12 +309,15 @@ async def build_moss_items() -> list[dict]:
     for m in medications:
         name_by_ref[f"medication:{m['id']}"] = m["name"]
 
+    enrich_tasks = []  # collected for batched await; index aligned to moss_items
+
     for p in persons:
         ref = f"person:{p['id']}"
         relations = _build_relations_for(ref, edges, name_by_ref)
+        base_text = _person_text(p, relations)
         moss_items.append({
             "id": ref,
-            "text": _person_text(p, relations),
+            "text": base_text,
             "metadata": {
                 "type": "person",
                 "name": p["name"],
@@ -207,14 +325,16 @@ async def build_moss_items() -> list[dict]:
                 "provenance": prov(),
             },
         })
+        enrich_tasks.append((len(moss_items) - 1, base_text))
     print(f"  persons: {len(persons)}")
 
     for pl in places:
         ref = f"place:{pl['id']}"
         relations = _build_relations_for(ref, edges, name_by_ref)
+        base_text = _place_text(pl, relations)
         moss_items.append({
             "id": ref,
-            "text": _place_text(pl, relations),
+            "text": base_text,
             "metadata": {
                 "type": "place",
                 "name": pl["name"],
@@ -222,6 +342,7 @@ async def build_moss_items() -> list[dict]:
                 "provenance": prov(),
             },
         })
+        enrich_tasks.append((len(moss_items) - 1, base_text))
     print(f"  places: {len(places)}")
 
     for m in medications:
@@ -281,21 +402,64 @@ async def build_moss_items() -> list[dict]:
         key="title",
     )
     for s in stories:
+        base_text = _story_text(s, name_by_ref)
         moss_items.append({
             "id": f"story:{s['id']}",
-            "text": _story_text(s, name_by_ref),
+            "text": base_text,
             "metadata": {
                 "type": "story",
                 "title": s["title"],
                 "provenance": prov(),
             },
         })
+        enrich_tasks.append((len(moss_items) - 1, base_text))
     print(f"  stories: {len(stories)}")
+
+    # ---- B7.2: category enrichment over persons/places/stories -------------
+    # Surface "favorite music" / "what she likes to eat" / "hobbies" cues in
+    # chunk text so semantic search bridges abstract → specific. One Groq
+    # call per chunk, fired in parallel. Skipped via YAAD_SKIP_ENRICHMENT=1.
+    # B7.2 — category enrichment. Two modes:
+    #   - enrich=True (CLI --wipe path): Groq rewrites chunks, result is
+    #     cached to fixtures/enriched_chunks.json. ~12s.
+    #   - enrich=False (server startup): just applies the cache. ~0s.
+    # When the cache is missing and enrich=False, we ship the base text —
+    # category queries fall through to retrieval._rewrite_and_retry().
+    cache = _load_enrich_cache()
+    applied = 0
+    for idx, _ in enrich_tasks:
+        ref = moss_items[idx]["id"]
+        if ref in cache:
+            moss_items[idx]["text"] = cache[ref]
+            applied += 1
+    if applied:
+        print(f"  enrich-cache: applied {applied}/{len(enrich_tasks)} cached entries")
+
+    if enrich and os.environ.get("YAAD_SKIP_ENRICHMENT") != "1":
+        print(f"  enriching {len(enrich_tasks)} chunks with category cues…")
+        # Serial with a small pause: Groq's 8b TPM is 6000 — bursting all 25
+        # chunks in parallel triggers 429s halfway through. Serial is ~12s
+        # total, deterministic, no retry logic needed.
+        changed = 0
+        new_cache = dict(cache)
+        for idx, original in enrich_tasks:
+            ref = moss_items[idx]["id"]
+            # Re-enrich from BASE text (not the already-cached version) so
+            # changes to the seed roll through.
+            result = await _enrich_chunk(original)
+            if result and result != original:
+                moss_items[idx]["text"] = result
+                new_cache[ref] = result
+                changed += 1
+            await asyncio.sleep(0.4)
+        print(f"  enriched: {changed}/{len(enrich_tasks)} chunks rewritten")
+        if new_cache != cache:
+            _save_enrich_cache(new_cache)
     return moss_items
 
 
 async def reseed_moss(verify: bool = True, verbose: bool = True,
-                       wipe_first: bool = False) -> int:
+                       wipe_first: bool = False, enrich: bool | None = None) -> int:
     """Reseed the in-process Moss session from Supabase.
 
     If `wipe_first=True`, delete the cloud index entirely first so stale test
@@ -327,7 +491,10 @@ async def reseed_moss(verify: bool = True, verbose: bool = True,
         moss._session = None
         moss._client = None
 
-    items = await build_moss_items()
+    # Default: enrich on --wipe, skip otherwise (use cache). Caller can override.
+    if enrich is None:
+        enrich = wipe_first
+    items = await build_moss_items(enrich=enrich)
     if verbose:
         print(f"\nUpserting {len(items)} items to Moss…")
     await moss.upsert_batch(items)
