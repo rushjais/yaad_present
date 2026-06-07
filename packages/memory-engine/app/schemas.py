@@ -78,6 +78,7 @@ class Person(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     notes: str = ""
     photo_ref: str | None = None
+    phone: str | None = None
     is_reassurance_contact: bool = False
     alert_priority: int | None = None
     provenance: Provenance | None = None
