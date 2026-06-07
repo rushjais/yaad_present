@@ -339,7 +339,7 @@ async def run_agent(room_name: str) -> None:
     pipeline, memory_client, lang_state = _build_pipeline(transport)
     start_lang_listener(lang_state)
 
-    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
+    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=False))
     reminder_queue: asyncio.Queue = asyncio.Queue()
     asyncio.create_task(poll_reminders(reminder_queue))
 
@@ -355,7 +355,7 @@ async def run_agent_local() -> None:
     pipeline, memory_client, lang_state = _build_pipeline(transport)
     start_lang_listener(lang_state)
 
-    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
+    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=False))
     reminder_queue: asyncio.Queue = asyncio.Queue()
     asyncio.create_task(poll_reminders(reminder_queue))
 

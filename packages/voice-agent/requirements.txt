@@ -21,6 +21,9 @@ anthropic>=0.34.0
 # MP3 → PCM conversion for MiniMax TTS (requires ffmpeg system package)
 pydub>=0.25.0
 
+# Image resize for vision_match.py
+Pillow>=10.0.0
+
 # Env vars
 python-dotenv>=1.0.0
 
