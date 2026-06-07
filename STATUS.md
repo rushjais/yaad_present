@@ -54,7 +54,7 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
   - `.env.local` symlinks to root `.env` for server-side Supabase access
 - Next: C4 care dashboard → C5 safety → C6 architecture diagram
 - Do NOT re-run seed_amma.py — data is already in Supabase
-- **Blocker (Keshav):** `POST /memory/write` writes to Supabase but no Moss upsert in main.py — add-fact-live beat not immediately queryable until reseed. Needs fix in memory-engine before demo.
+- ✅ add-fact-live beat fixed (fa02f3c): `POST /memory/write` now upserts to Moss in the same request. Write → queryable in <1s confirmed (837ms in Keshav's test).
 
 ## API keys status
 | Service | Status | Notes |
