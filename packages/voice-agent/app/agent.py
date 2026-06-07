@@ -41,7 +41,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask  # type: ignore
 from pipecat.processors.audio.vad_processor import VADProcessor  # type: ignore
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # type: ignore
 
-from .fallback import get_fixture
+from .fallback import get_fixture, get_demo_response
 from .lang_toggle import LanguageState, start_lang_listener
 from .llm import create_llm
 from .local_transport import LocalAudioTransport
@@ -213,9 +213,12 @@ class MemoryContextProcessor(FrameProcessor):
 
         # Toggle is source of truth; Groq auto-detect is a safety net.
         toggle_lang = self._lang_state.lang if self._lang_state else "en"
-        is_hindi = (toggle_lang == "hi")
+        detected_lang = (getattr(frame, "language", None) or "en").strip().lower()
+        # Groq returns ISO code "hi"; guard against full-name "hindi" too.
+        is_hindi = (toggle_lang == "hi") or (detected_lang in ("hi", "hindi"))
         mem_lang = "hi" if is_hindi else "en"
-        logger.info("[%s] Transcript: %s", "HI" if is_hindi else "EN", frame.text)
+        logger.info("[%s|toggle=%s detected=%s] Transcript: %s",
+                    "HI" if is_hindi else "EN", toggle_lang, detected_lang, frame.text)
         self._tracker.reset()
 
         # For Hindi queries: translate to English before hitting memory so Moss
@@ -226,19 +229,27 @@ class MemoryContextProcessor(FrameProcessor):
             query_text = await self._translate_to_english(frame.text)
             logger.info("Hindi→English for memory: %r", query_text)
 
-        # Memory query — track endpoint to distinguish temporal verbatim vs semantic hint.
-        t0 = time.perf_counter()
-        used_temporal = _is_temporal(query_text)
-        try:
-            async with asyncio.timeout(3.0):
-                if used_temporal:
-                    resp = await self._memory.temporal(query_text, "en")
-                else:
-                    resp = await self._memory.query(query_text, "en")
-        except Exception as e:
-            logger.warning("Memory failed (%s) — fixture fallback", e)
-            resp = get_fixture(query_text)
-        self._tracker.memory = time.perf_counter() - t0
+        # Demo mode: scripted responses fire before any network call.
+        demo = get_demo_response(query_text)
+        if demo is not None:
+            resp = demo
+            used_temporal = bool(demo.get("_temporal", False))
+            logger.info("[DEMO] scripted beat matched for: %r", query_text)
+            self._tracker.memory = 0.0
+        else:
+            # Memory query — track endpoint to distinguish temporal verbatim vs semantic hint.
+            t0 = time.perf_counter()
+            used_temporal = _is_temporal(query_text)
+            try:
+                async with asyncio.timeout(3.0):
+                    if used_temporal:
+                        resp = await self._memory.temporal(query_text, "en")
+                    else:
+                        resp = await self._memory.query(query_text, "en")
+            except Exception as e:
+                logger.warning("Memory failed (%s) — fixture fallback", e)
+                resp = get_fixture(query_text)
+            self._tracker.memory = time.perf_counter() - t0
 
         answer_draft = (resp.get("answer_draft") or "").strip()
 
@@ -314,8 +325,7 @@ class SentenceAggregator(FrameProcessor):
             elif tail and tail[-1] in _CLAUSE_ENDS and len(self._buf) >= _CLAUSE_MIN_LEN:
                 await self._flush()
         elif isinstance(frame, VADUserStartedSpeakingFrame):
-            # New user turn — discard any stale buffer from the previous response
-            # so its tail doesn't get spoken while the user is already talking.
+            # New user turn — discard stale buffer so it doesn't play mid-speech.
             self._buf = ""
             await self.push_frame(frame, direction)
         elif isinstance(frame, EndFrame):

@@ -79,12 +79,24 @@ def query_memory_for_name(name: str) -> dict:
 
 # ── Step 2: compose ───────────────────────────────────────────────────────────
 
+_DEMO_GREETINGS: dict[str, str] = {
+    "leo": "Amma, Leo is here — your grandson. He's 22 and studying at Georgia Tech. He visits you every Sunday, and he always brings jasmine flowers.",
+    "sarah": "Amma, Sarah is here — your daughter. She lives just 15 minutes away and loves you very much.",
+    "priya": "Amma, it's Priya — your dear friend of forty years. You used to walk together every evening at Lullwater Park.",
+}
+
+
 def compose_greeting(name: str, answer_draft: str | None, grounded: bool) -> str:
     """One warm sentence about the visitor, grounded-only.
 
     Falls back to a safe neutral line if not grounded or facts are absent.
     Falls back to a template if TrueFoundry keys are missing.
     """
+    if os.environ.get("YAAD_DEMO_MODE") == "1":
+        scripted = _DEMO_GREETINGS.get(name.lower())
+        if scripted:
+            return scripted
+
     if not grounded or not answer_draft:
         return "I'm not sure who that is, Amma — let me check with the family."
 
