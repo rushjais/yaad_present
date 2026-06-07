@@ -124,3 +124,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 -- Idempotent; safe to re-run.
 -- ---------------------------------------------------------------------------
 ALTER TABLE persons ADD COLUMN IF NOT EXISTS phone TEXT;
+
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS face_embedding JSONB;
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS category TEXT;

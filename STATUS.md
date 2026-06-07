@@ -22,33 +22,28 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - **Heads-up from Track B:** B7 `items[]` may contain graph-expanded neighbors with derived text — treat `items[].text` as authoritative, do NOT reparse. Intent-routed responses may take ~200ms on LLM fallback; speculative fire on partial transcript handles this.
 
 ### Track B — Memory (Keshav)
-- Phase: **B7.2 — category enrichment + rewrite fallback complete (2026-06-06)** ✅
-  - See `MEMORY_V2_README.md` for B7.1 background; `packages/memory-engine/CLAUDE.md` for the B7.2 details.
-- 39/39 robustness green (added beat 6: abstract preferences). All 5 demo beats + the new preference beat ground correctly; anti-confab cases all safe-refuse.
-- **B7.2 (2026-06-06):** fixed "favorite music" → safe-refusal regression. Two layers: (1) seed-time chunk enrichment via Groq 8b labels each preference with its category as natural prose ("Music: Amma listens to Bollywood songs from the 1960s. Drinks: jasmine tea. Activities: Lullwater Park walk"), cached in `fixtures/enriched_chunks.json` so server startup pays 0 LLM cost; (2) runtime query-rewrite fallback in `app/retrieval.py` fires only when first-pass returns 0 above τ — entity-anchored, same τ on rescue path, and the rewrite Groq prompt doubles as an anti-confab gate (returns `[]` for general-knowledge queries like president/Mars/2+2). Adversarial preference queries that semantically resemble enriched chunks ("favorite color", "horror movies") slip past τ at the memory layer — voice-agent grounding prompt is the final anti-confab gate, not a stopword filter. Latency unchanged on happy path; rewrite fallback adds ~300ms only when fired.
+- Phase: **Archetype router rebuild in progress (2026-06-07)**.
+- B7.2 enrichment is legacy. Root cause recorded: Groq rewrote sparse chunks at index time and could attribute another person's biography to the wrong row. `fixtures/enriched_chunks.json` is removed; `scripts/reseed_moss.py` now indexes only stories and `episodes(kind='captured_fact')`.
+- New architecture: `router.py` dispatches to identity, relational, temporal_med, temporal_event, preference, remember, or episodic. Structural archetypes use Supabase and `edges_cache`; Moss is only the episodic fallback. Groq is restricted to router classification fallback and capture extraction.
+- Contract impact: response shapes unchanged. Additive schema fields: `persons.preferences`, `persons.face_embedding`, `stories.category`; `/health` also reports `moss_doc_count`.
+- Fixture fallbacks are gated by `YAAD_DEMO_MODE=1`; default behavior is loud HTTP 500 on real errors.
 - **Unsiloed ingestion shipped (2026-06-06):** new `POST /ingest/document` endpoint. Upload a medical PDF → Unsiloed parses → Groq normalizes into typed Yaad records → write_memory + Moss upsert. Smoke test (`scripts/smoke_unsiloed.py`) extracts Aspirin + Metoprolol + Dr. Patel + follow-up appointment from a synthetic discharge summary and they're queryable on the next turn. Earns the §18 Unsiloed sponsor checkbox. Field-name quirks logged in `app/unsiloed.py` (multipart field is `document`, form field is `message`).
 - **Bug fixed in passing:** `db.write_memory` was popping `source`/`added_by` AFTER `**payload` spread, so any caller passing those keys hit PGRST204. Pre-existing latent bug; surfaced by ingest, fixed by popping before spread. No existing call sites affected.
 - Pitch language updated: dropped "memory graph" framing → **"a living memory that lives inside the agent"** (instant updates, on-device, sub-10ms).
-- **What changed in v2:**
-  1. Killed graph expansion + relational-walk + 4-layer guards. Single hard τ=0.82 relevance gate.
-  2. Better Moss chunks: relationships baked into entity text at seed time ("Leo. Amma's grandson, Sarah's son. 22 years old…").
-  3. Family-overview chunk for "tell me about my family."
-  4. Optional 1-hop query expansion when user mentions multiple entities.
-  5. `answer_draft` for semantic queries = top chunk text (LLM rewrites). Temporal still pre-composes (grounded negatives need exact phrasing).
-  6. `scripts/reseed_moss.py --wipe` deletes cloud index before reseeding. Use before demo or after dirty test runs.
-  7. `graph.py` trimmed to ~50 lines — entity_text cache only (for capture).
-- Event writes now backfill `participant_ids`: `/memory/write` resolves person names mentioned in event title/notes through Moss (first person hit in top 8 with score ≥0.85), including lowercase mentions matched against known names/aliases.
-- `scripts/reseed_moss.py` now preserves stored `person.relationship` in chunks when no edge-derived relationship phrase exists, so newly added people like Aishani keep relationship context after a wipe/reseed.
+- New tests added: general query corpus, sparse-person hallucination regression, grounding provenance, and latency guard.
+- Verification (2026-06-07): `smoke_test.py`, `robustness.py`, `test_general_queries.py`, `test_grounding_integrity.py`, and `test_no_hallucination.py` passed 105/105 against local server; `test_latency.py` passed 1/1. Structural p95 was ~27ms client-side in the run.
+- Note: live Supabase has not yet had the additive SQL migration applied (`persons.preferences`, `persons.face_embedding`, `stories.category`). The engine includes deterministic fallback parsing for existing seed rows until the Supabase SQL editor migration is applied; JSONB values take precedence once present.
 - **What shipped:** intent classifier (regex+Groq), time-window parser, temporal routing w/ per-medication, capture w/ structured extraction + review queue, Moss session self-heal on startup. Full list in previous STATUS entries.
 - **Contract impact:** shapes unchanged. `items[]` may contain graph-expanded neighbors. CONTRACT v1 holds — no breaking changes for A or C.
 - **Latency:** regex fast-path sub-20ms. LLM-fallback path ~300ms — Track A fires speculatively on partial transcript.
-- **Caveats:** auto-capture not auto-committing (`pending_review`). Reliable add-fact-live = Track C web form. Implicit-entity allowlist is hand-curated.
+- **Caveats:** auto-capture still creates `pending_review` proposals plus searchable `captured_fact`; only confirmed captured facts are in Moss.
 
 ### Track C — Caregiver Web (Raghav)
 - Phase: C0 — ready to start
 - Done: Supabase tables created, seeded with Amma's life. OpenAPI + CLAUDE.md ready.
 - **Start here:** get `.env` from Keshav (SUPABASE_URL + SUPABASE_SERVICE_KEY), generate types.ts, scaffold Next.js
 - Do NOT re-run seed_amma.py — data is already there
+- Open dependency: caregiver-web needs a preferences editor on the person form - schema lives in `persons.preferences JSONB`, recommended keys in `packages/memory-engine/app/archetypes/preference.py:RECOMMENDED_KEYS`.
 
 ## API keys status
 | Service | Status | Notes |
@@ -72,7 +67,7 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - `capture.py` — B7 rebuilt but auto-capture not auto-committing; `captured_fact` retrievable immediately, structured proposal in `episodes(kind='pending_review')` for caregiver confirmation. Reliable add-fact-live = Track C web form.
 - Wander alert delivery: Gmail SMTP → `@msg.fi.google.com` (carrier gateway). End-to-end smoke green; verified SMS landed on Google Fi phone. Twilio path removed (toll-free verification was the blocker).
 - Moss `SessionIndex.session()` does NOT reliably resume cloud index in a fresh process. Workaround: `scripts/reseed_moss.py` reseeds from Supabase before each demo.
-- `app/main.py` silent fixture fallback (`try: real; except: fixture`) hides real errors — will gate behind `YAAD_DEMO_MODE=1` in follow-up.
+- `app/main.py` fixture fallback is now gated behind `YAAD_DEMO_MODE=1`.
 
 ## Language
 **English only.** `lang` param accepted everywhere but ignored — always English. Hindi is a future add-on; the field is in the contract so it wires later without a breaking change.

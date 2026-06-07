@@ -1,0 +1,48 @@
+{
+  "medication_words": [
+    "pill",
+    "pills",
+    "med",
+    "meds",
+    "medicine",
+    "medication",
+    "tablet",
+    "tablets",
+    "dose",
+    "doses"
+  ],
+  "medication_query_words": ["did", "have", "when", "take", "taken", "took", "had"],
+  "event_words": [
+    "visit",
+    "visiting",
+    "came",
+    "coming",
+    "appointment",
+    "doctor",
+    "calendar",
+    "schedule",
+    "plans",
+    "event",
+    "over"
+  ],
+  "remember_phrases": [
+    "remember this",
+    "remember that",
+    "please remember",
+    "don't forget",
+    "dont forget",
+    "make a note",
+    "note that"
+  ],
+  "identity_words": [
+    "who is",
+    "who's",
+    "tell me about",
+    "what about",
+    "remind me who",
+    "what do you know about",
+    "how old is",
+    "where does",
+    "what does"
+  ]
+}

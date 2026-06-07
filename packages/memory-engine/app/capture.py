@@ -102,25 +102,23 @@ async def _llm_extract(text: str) -> Optional[Extraction]:
 
 
 # ---------------------------------------------------------------------------
-# Entity resolution against Moss
+# Entity resolution against Supabase names/aliases
 # ---------------------------------------------------------------------------
 
-RESOLUTION_THRESHOLD = 0.85   # raw Moss semantic floor for "match existing"
-
-
 async def _resolve_existing(name: Optional[str]) -> Optional[dict]:
-    """Returns the matched Moss doc dict if a name resolves to an existing
-    entity with high confidence, else None.
-    """
     if not name:
         return None
-    from .moss_client import moss
-    hits = await moss.query(name, top_k=3)
-    if not hits:
-        return None
-    top = hits[0]
-    if float(top.get("score", 0.0)) >= RESOLUTION_THRESHOLD and name.lower() in (top.get("text", "").lower()):
-        return top
+    from .db import fetch_person_by_name, fetch_place_by_name
+
+    people = await fetch_person_by_name(name)
+    if people:
+        row = people[0]
+        return {"id": f"person:{row['id']}", "text": row.get("notes") or row.get("name") or ""}
+
+    places = await fetch_place_by_name(name)
+    if places:
+        row = places[0]
+        return {"id": f"place:{row['id']}", "text": row.get("notes") or row.get("name") or ""}
     return None
 
 
