@@ -2,7 +2,7 @@
 
 
 # (Feedback at the bottom)
-Yaad is not ChatGPT with a microphone.
+Yaad is NOT ChatGPT with a microphone, heres why.
 
 Built for the **Conversational AI Hackathon — Moss (YC F25) @ Y Combinator** by Rushil, Keshav, and Raghav.
 
