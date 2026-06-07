@@ -3,18 +3,19 @@
 
 ---
 
-## Current state (updated 2026-06-06, session end)
-- Phase: **A2 complete — all components live and validated**
+## Current state (updated 2026-06-06)
+- Phase: **A2 complete + language bugs fixed (2026-06-06)**
 - **Agent startup:** ✅ `LLM provider: TrueFoundry (openai/gpt-4o-mini @ https://gateway.truefoundry.ai)`
 - **Groq STT:** ✅ English 0.37s exact transcript
 - **MiniMax TTS:** ✅ `status_code=0`, `speech-02-hd`, `English_Graceful_Lady`, `api.minimax.io` (no GroupId), 29KB MP3, round-trip verified
 - **VAD:** ✅ `VADProcessor` wired, Silero loaded, `VADUserStartedSpeakingFrame`/`VADUserStoppedSpeakingFrame`
 - **LiveKit:** ✅ fully connected to `yaad-demo`, audio input running
-- **answer_draft routing:** ✅ `answer_draft` populated → emit verbatim (skips LLM); null → LLM from items[]
+- **answer_draft routing:** ✅ English → emit verbatim; Hindi → translate to Devanagari first, then emit
 - **--local mode:** ✅ `arch -arm64 python3 -m app.agent --local` (sounddevice mic/speakers)
+- **Language routing:** ✅ English in → English out; Hindi in → Hindi Devanagari out → Wise_Woman TTS voice
 
 ## Language scope
-**English only.** Always pass `"lang": "en"`. Hindi deferred.
+**English + Hindi live.** Memory queries always use `"lang": "en"` (English-translated before Moss lookup). Response language driven by detected STT language.
 
 ## Keys confirmed (from Track B — copy into your .env)
 | Service | Key var | Endpoint / notes |
@@ -42,8 +43,9 @@ Short, calm, warm. English only.
 ```
 
 ## answer_draft routing (implemented in MemoryContextProcessor)
-- `answer_draft` populated → **emit verbatim, skip LLM** (temporal path — grounded negatives like "not yet taken" must not be re-composed)
-- `answer_draft` null → compose from items[] via LLM (semantic path)
+- `answer_draft` populated + EN → **emit verbatim, skip LLM** (temporal path — grounded negatives like "not yet taken" must not be re-composed)
+- `answer_draft` populated + HI → **translate to Devanagari via `_translate_draft_to_hindi`, then emit** (preserves negation; TTS then picks Wise_Woman automatically)
+- `answer_draft` null → compose from items[] via LLM with explicit `[LANGUAGE]` anchor (semantic path)
 
 ## File responsibilities
 | File | Does |
@@ -66,10 +68,13 @@ LiveKit audio in (or sounddevice mic in --local mode)
   → VADProcessor (Silero VAD → VADUserStartedSpeakingFrame / VADUserStoppedSpeakingFrame)
   → Groq Whisper STT (buffers utterance → transcribes, logs STT time)
   → MemoryContextProcessor:
-      answer_draft? → emit verbatim (temporal path, skip LLM)
-      else         → /memory/query + LLM streaming → TextFrame (semantic path)
+      Hindi? → translate query to English (_translate_to_english) for Moss lookup
+      temporal? → /memory/temporal
+             answer_draft (English) → Hindi? translate to Devanagari (_translate_draft_to_hindi) → emit
+             answer_draft (English) → EN? emit verbatim
+      else   → /memory/query + LLM streaming with explicit [LANGUAGE] anchor → TextFrame (semantic path)
   → SentenceAggregator
-  → MiniMax TTS → TTSAudioRawFrame (logs [LATENCY] line)
+  → MiniMax TTS: Devanagari detected → Wise_Woman + language_boost:Hindi; else → English_Graceful_Lady
   → LiveKit audio out (or sounddevice speakers in --local mode)
 ```
 

@@ -40,6 +40,7 @@ from pipecat.processors.audio.vad_processor import VADProcessor  # type: ignore
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # type: ignore
 
 from .fallback import get_fixture
+from .lang_toggle import LanguageState, start_lang_listener
 from .llm import create_llm
 from .local_transport import LocalAudioTransport
 from .memory_client import MemoryClient
@@ -53,20 +54,22 @@ logger = logging.getLogger(__name__)
 # §6 grounding system prompt — English + Hindi
 SYSTEM_PROMPT = (
     "You are Yaad, a warm companion for someone with memory loss. "
+    "The person you are SPEAKING TO is the one named Amma in the memory context. "
+    "Always address her as 'you' / 'your' — never say 'Amma' as if she is not there. "
+    "Example: if a chunk says 'Amma loves jasmine tea' you say 'You love jasmine tea.' "
     "State ONLY facts in the provided MEMORY context. "
     "If the context is empty or confidence is low, say you're not sure and offer to check with the family. "
     "Never invent people, events, or dates. "
     "Short, calm, warm. "
-    "LANGUAGE RULE: respond in the same language the user spoke. "
-    "If the user spoke Hindi, reply fully in Hindi (Devanagari script). "
-    "The MEMORY context is in English — translate your answer into Hindi if needed. "
-    "IDENTITY RULE: when asked who someone is ('Who is X?', 'Kaun hai X?', 'Yeh kaun hai?'), "
-    "search ALL items in the MEMORY context for a person entry containing a relationship word "
-    "(grandson, daughter, son, daughter-in-law, pota, beti, beta, nati, etc.). If found, ALWAYS "
-    "lead with that relationship in the user's language, then add one warm detail. "
+    "STRICT LANGUAGE RULE: detect the language the user spoke from [USER SAID] and reply ONLY in that language. "
+    "English input → English reply only. Hindi input → Hindi reply only, using Devanagari script only (never Roman transliteration). "
+    "The MEMORY context is always in English; translate facts into the user's language as needed. "
+    "IDENTITY RULE: when asked who someone is, search ALL items in the MEMORY context for a person entry "
+    "containing a relationship word (e.g. grandson, daughter, son, neighbour). If found, ALWAYS "
+    "lead with that relationship expressed in the user's language, then add one warm detail. "
     "Never open with an event, a date, or a note. "
     "If NO relationship word is in the MEMORY CONTEXT, do NOT invent one — give the safe refusal "
-    "in the user's language ('I\\'m not sure' / 'Mujhe pata nahi, main family se poochhunga')."
+    "in the user's language."
 )
 
 _TEMPORAL_KW = {
@@ -93,7 +96,13 @@ def _build_messages_semantic(user_text: str, memory_resp: dict, lang: str = "en"
           even when the memory context (and most of its training) is English.
     """
     ctx = _format_memory_context(memory_resp)
-    lang_hint = "[LANGUAGE: user spoke Hindi — reply fully in Hindi / Devanagari]\n\n" if lang == "hi" else ""
+    if lang == "hi":
+        lang_hint = (
+            "[LANGUAGE: user spoke Hindi — you MUST reply entirely in Hindi using Devanagari script. "
+            "DO NOT use Roman transliteration. DO NOT mix in English words.]\n\n"
+        )
+    else:
+        lang_hint = "[LANGUAGE: user spoke English — reply ONLY in English.]\n\n"
     user_content = (
         f"{lang_hint}[MEMORY CONTEXT]\n{ctx}\n\n[USER SAID]: {user_text}"
         if ctx else f"{lang_hint}{user_text}"
@@ -137,11 +146,13 @@ class MemoryContextProcessor(FrameProcessor):
     issues and allows provider switching (TrueFoundry / OpenAI / Anthropic).
     """
 
-    def __init__(self, memory_client: MemoryClient, llm, tracker: LatencyTracker) -> None:
+    def __init__(self, memory_client: MemoryClient, llm, tracker: LatencyTracker,
+                 lang_state: LanguageState | None = None) -> None:
         super().__init__()
         self._memory = memory_client
         self._llm = llm
         self._tracker = tracker
+        self._lang_state = lang_state
 
     async def _translate_to_english(self, hindi_text: str) -> str:
         """Translate a Hindi query to English for Moss retrieval.
@@ -162,6 +173,35 @@ class MemoryContextProcessor(FrameProcessor):
         except Exception:
             return hindi_text  # fallback: query in Hindi (will return 0 items but won't crash)
 
+    async def _translate_draft_to_hindi(self, english_draft: str) -> str:
+        """Translate a pre-composed English answer_draft to Hindi Devanagari.
+
+        Preserves negation exactly: "not yet" → "अभी नहीं", "nothing" → "कुछ नहीं".
+        Used on the temporal path when the user spoke Hindi — the draft is assembled
+        by the memory engine in English and must be surfaced in the user's language.
+        Returns the original draft on any error so the answer is never silently lost.
+        """
+        msgs = [
+            {
+                "role": "system",
+                "content": (
+                    "Translate the following short English sentence to Hindi using Devanagari script only. "
+                    "Preserve all negation exactly: 'not yet' → 'अभी नहीं', 'nothing' → 'कुछ नहीं', "
+                    "'no' → 'नहीं'. Do NOT recompose or paraphrase — translate faithfully. "
+                    "Return ONLY the Hindi translation, no explanation."
+                ),
+            },
+            {"role": "user", "content": english_draft},
+        ]
+        try:
+            async with asyncio.timeout(3.0):
+                out = []
+                async for chunk in self._llm.complete(msgs):
+                    out.append(chunk)
+                return "".join(out).strip() or english_draft
+        except Exception:
+            return english_draft  # preserve original on failure
+
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
@@ -169,13 +209,13 @@ class MemoryContextProcessor(FrameProcessor):
             await self.push_frame(frame, direction)
             return
 
-        logger.info("Transcript: %s", frame.text)
-        self._tracker.reset()
-
-        # Detect language from Groq's transcription
+        # Toggle is source of truth; Groq auto-detect is a safety net.
+        toggle_lang = self._lang_state.lang if self._lang_state else "en"
         detected_lang = (getattr(frame, "language", None) or "en").strip().lower()
-        is_hindi = detected_lang == "hindi"
+        is_hindi = (toggle_lang == "hi") or (detected_lang == "hindi")
         mem_lang = "hi" if is_hindi else "en"
+        logger.info("[%s] Transcript: %s", "HI" if is_hindi else "EN", frame.text)
+        self._tracker.reset()
 
         # For Hindi queries: translate to English before hitting memory so Moss
         # semantic search matches English chunks. The original Hindi text is kept
@@ -203,10 +243,13 @@ class MemoryContextProcessor(FrameProcessor):
 
         if used_temporal and answer_draft:
             # TEMPORAL PATH — answer_draft pre-composes absence facts like
-            # "not yet taken" that have no semantic chunk. Emit verbatim;
-            # LLM re-composition would silently drop the negation.
-            logger.info("temporal answer_draft — emitting verbatim, skipping LLM")
+            # "not yet taken" that have no semantic chunk. Emit verbatim for
+            # English; translate to Hindi Devanagari for Hindi users so TTS
+            # picks the correct voice and the speaker hears their language.
+            logger.info("temporal answer_draft — emitting %s, skipping LLM re-composition", "after Hindi translation" if is_hindi else "verbatim")
             self._tracker.llm = 0.0
+            if is_hindi:
+                answer_draft = await self._translate_draft_to_hindi(answer_draft)
             await self.push_frame(TextFrame(answer_draft))
         else:
             # SEMANTIC PATH — use original transcript (Hindi if spoken in Hindi)
@@ -261,13 +304,18 @@ class SentenceAggregator(FrameProcessor):
 # ---------------------------------------------------------------------------
 
 def _build_pipeline(transport) -> tuple:
-    """Build shared pipeline components (VAD, STT, memory, LLM, TTS)."""
+    """Build shared pipeline components (VAD, STT, memory, LLM, TTS).
+
+    Returns (pipeline, memory_client, lang_state).  Callers pass lang_state
+    to start_lang_listener() so the 'h' toggle works while audio runs.
+    """
     tracker = LatencyTracker()
+    lang_state = LanguageState(default="en")
     vad = VADProcessor(vad_analyzer=create_vad())
-    stt = create_stt(tracker=tracker)
+    stt = create_stt(tracker=tracker, lang_state=lang_state)
     memory_client = MemoryClient()
     llm = create_llm()
-    memory_processor = MemoryContextProcessor(memory_client, llm, tracker)
+    memory_processor = MemoryContextProcessor(memory_client, llm, tracker, lang_state=lang_state)
     sentence_agg = SentenceAggregator()
     tts = MiniMaxTTSService(tracker=tracker)
 
@@ -282,13 +330,14 @@ def _build_pipeline(transport) -> tuple:
             transport.output(),  # audio out
         ]
     )
-    return pipeline, memory_client
+    return pipeline, memory_client, lang_state
 
 
 async def run_agent(room_name: str) -> None:
     """LiveKit mode — connects to the given room."""
     transport = create_transport(room_name)
-    pipeline, memory_client = _build_pipeline(transport)
+    pipeline, memory_client, lang_state = _build_pipeline(transport)
+    start_lang_listener(lang_state)
 
     task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
     reminder_queue: asyncio.Queue = asyncio.Queue()
@@ -303,7 +352,8 @@ async def run_agent_local() -> None:
     """Local mode — mic + speakers via sounddevice, no LiveKit."""
     logger.info("Local audio mode — speak into your mic, Yaad will reply through speakers.")
     transport = LocalAudioTransport()
-    pipeline, memory_client = _build_pipeline(transport)
+    pipeline, memory_client, lang_state = _build_pipeline(transport)
+    start_lang_listener(lang_state)
 
     task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
     reminder_queue: asyncio.Queue = asyncio.Queue()
