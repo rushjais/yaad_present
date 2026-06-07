@@ -4,14 +4,15 @@ import { useState } from "react";
 import { writeMemory } from "@/lib/api";
 import type { EventPayload, MedicationPayload, PersonPayload, StoryPayload } from "@/lib/types";
 
-type Tab = "person" | "event" | "medication" | "story";
+type Tab = "person" | "event" | "medication" | "records" | "story";
 type Status = "idle" | "loading" | "success" | "error";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "person",     label: "Person"     },
-  { id: "event",      label: "Event"      },
-  { id: "medication", label: "Medication" },
-  { id: "story",      label: "Story"      },
+  { id: "person",     label: "Person"           },
+  { id: "event",      label: "Event"            },
+  { id: "medication", label: "Medication"       },
+  { id: "records",    label: "Medical Records"  },
+  { id: "story",      label: "Story"            },
 ];
 
 const EVENT_KINDS = [
@@ -36,10 +37,15 @@ export default function MemoriesPage() {
   const [med,    setMed]    = useState(BLANK_MED);
   const [story,  setStory]  = useState(BLANK_STORY);
 
+  // Medical records state
+  const [pdfFile,      setPdfFile]      = useState<File | null>(null);
+  const [ingestResult, setIngestResult] = useState<{ summary: string; created_refs: string[] } | null>(null);
+
   function switchTab(t: Tab) {
     setTab(t);
     setStatus("idle");
     setErrMsg("");
+    setIngestResult(null);
   }
 
   async function submit(
@@ -59,6 +65,27 @@ export default function MemoriesPage() {
     } catch (e) {
       setStatus("error");
       setErrMsg(e instanceof Error ? e.message : "Something went wrong");
+    }
+  }
+
+  async function onIngest(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pdfFile) return;
+    setStatus("loading");
+    setErrMsg("");
+    setIngestResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", pdfFile);
+      const res = await fetch("/api/engine/ingest/document", { method: "POST", body: form });
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+      const data = await res.json();
+      setIngestResult({ summary: data.summary, created_refs: data.created_refs });
+      setStatus("success");
+      setPdfFile(null);
+    } catch (err) {
+      setStatus("error");
+      setErrMsg(err instanceof Error ? err.message : "Upload failed");
     }
   }
 
@@ -116,7 +143,7 @@ export default function MemoriesPage() {
       </p>
 
       {/* Tab bar */}
-      <div className="flex gap-1 border-b border-stone-200 mb-6">
+      <div className="flex gap-1 border-b border-stone-200 mb-6 flex-wrap">
         {TABS.map(({ id, label }) => (
           <button
             key={id}
@@ -257,6 +284,96 @@ export default function MemoriesPage() {
           <Feedback status={status} errMsg={errMsg} />
           <SubmitButton status={status} label="Add Medication" />
         </form>
+      )}
+
+      {/* ── Medical Records ── */}
+      {tab === "records" && (
+        <div className="flex flex-col gap-6">
+          {/* explainer */}
+          <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+            <p className="text-sm font-medium text-blue-900 mb-1">Upload a medical document</p>
+            <p className="text-xs text-blue-700 leading-relaxed">
+              Discharge summaries, prescription lists, or doctor notes — Yaad will extract
+              medications, appointments, and key facts and add them to Amma&apos;s memory instantly.
+            </p>
+          </div>
+
+          <form onSubmit={onIngest} className="flex flex-col gap-4">
+            <Field label="PDF file" required>
+              <div
+                className={`relative flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-8 transition-colors cursor-pointer ${
+                  pdfFile ? "border-stone-400 bg-stone-50" : "border-stone-300 hover:border-stone-400"
+                }`}
+                onClick={() => document.getElementById("pdf-input")?.click()}
+              >
+                <input
+                  id="pdf-input"
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={e => setPdfFile(e.target.files?.[0] ?? null)}
+                />
+                {pdfFile ? (
+                  <>
+                    <span className="text-2xl">📄</span>
+                    <p className="text-sm font-medium text-stone-800">{pdfFile.name}</p>
+                    <p className="text-xs text-stone-400">{(pdfFile.size / 1024).toFixed(0)} KB — click to change</p>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-2xl text-stone-300">📄</span>
+                    <p className="text-sm text-stone-500">Click to select a PDF</p>
+                    <p className="text-xs text-stone-400">Discharge summaries, prescription lists…</p>
+                  </>
+                )}
+              </div>
+            </Field>
+
+            <Feedback status={status} errMsg={errMsg} />
+
+            {status !== "success" && (
+              <button
+                type="submit"
+                disabled={!pdfFile || status === "loading"}
+                className="mt-1 w-full rounded-md bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50 transition-colors"
+              >
+                {status === "loading" ? "Reading document…" : "Upload & extract"}
+              </button>
+            )}
+          </form>
+
+          {/* Extraction result */}
+          {ingestResult && (
+            <div className="flex flex-col gap-3">
+              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                <p className="text-sm font-medium text-green-800 mb-1">
+                  {ingestResult.created_refs.length} item{ingestResult.created_refs.length !== 1 ? "s" : ""} added to Amma&apos;s memory
+                </p>
+                <p className="text-xs text-green-700 leading-relaxed">{ingestResult.summary}</p>
+              </div>
+              <div className="flex flex-col gap-1">
+                {ingestResult.created_refs.map((ref) => (
+                  <div key={ref} className="flex items-center gap-2 text-xs text-stone-500">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                      ref.startsWith("medication") ? "bg-blue-400" :
+                      ref.startsWith("event")      ? "bg-amber-400" :
+                      ref.startsWith("person")     ? "bg-orange-400" :
+                      "bg-stone-300"
+                    }`} />
+                    {ref}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => { setIngestResult(null); setStatus("idle"); }}
+                className="text-xs text-stone-500 underline text-left"
+              >
+                Upload another document
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Story ── */}

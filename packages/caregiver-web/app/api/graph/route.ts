@@ -16,12 +16,14 @@ function sbFetch(table: string, select: string) {
 type RawPerson = { id: string; name: string; relationship: string };
 type RawPlace  = { id: string; name: string; kind: string };
 type RawEdge   = { from_ref: string; to_ref: string; type: string; weight: number };
+type RawEvent  = { participant_ids: string[] | null };
 
 export async function GET() {
-  const [persons, places, edges] = await Promise.all([
+  const [persons, places, edges, events] = await Promise.all([
     sbFetch("persons", "id,name,relationship") as Promise<RawPerson[]>,
     sbFetch("places",  "id,name,kind")         as Promise<RawPlace[]>,
     sbFetch("edges",   "from_ref,to_ref,type,weight") as Promise<RawEdge[]>,
+    sbFetch("events",  "participant_ids") as Promise<RawEvent[]>,
   ]);
 
   // Deduplicate by (label, type) — keep first occurrence of each unique name
@@ -48,9 +50,25 @@ export async function GET() {
   }
 
   const validIds = new Set(nodes.map((n) => n.id));
-  const links = edges
+
+  // Seeded edges
+  const links: { source: string; target: string; type: string; weight: number }[] = edges
     .filter((e) => validIds.has(e.from_ref) && validIds.has(e.to_ref))
     .map((e) => ({ source: e.from_ref, target: e.to_ref, type: e.type, weight: e.weight }));
+
+  // Derive edges from event participant_ids — link each participant to Amma
+  const ammaRef = "person:7b799a74-176f-4829-973e-d68d915b424a";
+  const eventEdgeSeen = new Set<string>();
+  for (const ev of events) {
+    for (const pid of ev.participant_ids ?? []) {
+      const ref = `person:${pid}`;
+      if (!validIds.has(ref) || ref === ammaRef) continue;
+      const key = `${ref}→${ammaRef}`;
+      if (eventEdgeSeen.has(key)) continue;
+      eventEdgeSeen.add(key);
+      links.push({ source: ref, target: ammaRef, type: "visits", weight: 1 });
+    }
+  }
 
   return NextResponse.json({ nodes, links });
 }
