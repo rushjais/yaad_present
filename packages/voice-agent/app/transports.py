@@ -1,23 +1,26 @@
-"""LiveKit transport factory with VAD.
+"""LiveKit transport factory.
 
-[CONFIRM] at sponsor table:
-- Exact LiveKit SDK import for token generation (livekit-api vs livekit-server-sdk)
-- LiveKitParams field names (may differ between pipecat versions)
-- Whether SileroVADAnalyzer needs explicit model download
+Pipecat 1.3.0 path changes (resolved 2026-06-06):
+  pipecat.transports.network.livekit → pipecat.transports.livekit.transport
+  pipecat.vad.silero                 → pipecat.audio.vad.silero
+  LiveKitParams: vad_enabled/vad_analyzer removed — VAD is now wired via
+    VADController in the pipeline (see agent.py).
+
+[CONFIRM] livekit-api token generation: confirmed import path below.
 """
 
 import os
 
-# [CONFIRM] pipecat import paths
-from pipecat.transports.network.livekit import LiveKitTransport, LiveKitParams  # type: ignore
-from pipecat.vad.silero import SileroVADAnalyzer  # type: ignore
-
-# [CONFIRM] livekit-api import path — install: pip install livekit-api
+from pipecat.audio.vad.silero import SileroVADAnalyzer  # type: ignore
+from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport  # type: ignore
 from livekit.api import AccessToken, VideoGrants  # type: ignore
 
 
+def create_vad() -> SileroVADAnalyzer:
+    return SileroVADAnalyzer()
+
+
 def _make_token(room_name: str) -> str:
-    # [CONFIRM] exact livekit-api token-builder API
     return (
         AccessToken(os.environ["LIVEKIT_API_KEY"], os.environ["LIVEKIT_API_SECRET"])
         .with_identity("yaad-agent")
@@ -36,7 +39,5 @@ def create_transport(room_name: str) -> LiveKitTransport:
         params=LiveKitParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),  # [CONFIRM] constructor args if any
         ),
     )

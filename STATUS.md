@@ -9,16 +9,19 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 ## Tracks
 
 ### Track A — Voice (Rushil)
-- Phase: **A1 complete / A2 blocked on LLM key**
-- Done: pipeline scaffold, Groq STT validated ✅, MiniMax response format confirmed (need fresh key), LLM provider auto-detection (TrueFoundry → OpenAI → Anthropic), latency logging per turn.
+- Phase: **A2 ready — pipeline starts clean, LLM confirmed, LiveKit connecting**
+- Done: pipeline scaffold + pipecat 1.3.0 import paths fixed, Groq STT ✅, LLM ✅ TrueFoundry confirmed, agent starts and links all processors, LiveKit connecting with real URL.
 - **Validated this session:**
-  - Groq STT English: ✅ "Who is this person?" → exact transcript, **0.46s**
-  - Groq STT Hindi: ⚠️ needs Devanagari input — romanized text misidentified as Spanish (not blocking; English-only for now)
-  - MiniMax TTS: ✗ `status_code=2049` (invalid API key). **Need fresh key from portal.minimax.chat.** Response format confirmed: `data["data"]["audio"]` — hex-encoded MP3.
-  - ffmpeg: ✅ v8.1.1 installed
-- **Blocker for A2:** need one LLM key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY` or TrueFoundry vars). Current `.env` has none configured.
-- **Blocker for MiniMax TTS:** fresh API key needed (current key is invalid for T2A endpoint).
-- Next: get LLM key → test full pipeline without LiveKit (agent.py with mocked transport) → get valid MiniMax key → A3 latency pass.
+  - **Agent startup:** ✅ `LLM provider: TrueFoundry (openai/gpt-4o-mini @ https://gateway.truefoundry.ai)` — past LLM line, no import errors
+  - **Pipeline links:** ✅ `LiveKitInputTransport → GroqWhisperSTTService → MemoryContextProcessor → SentenceAggregator → MiniMaxTTSService → LiveKitOutputTransport`
+  - **LiveKit:** ✅ Connecting to wss://keepsake-y39026vu.livekit.cloud (real URL confirmed in .env)
+  - **Groq STT English:** ✅ "Who is this person?" → exact transcript, **0.37s**
+  - **MiniMax TTS:** ✗ `status_code=1004` "login fail: Please carry the API secret key" — key reaches server but auth format rejected. Try auth without `Bearer` prefix. May need a TTS-specific key (current key may be chat-only).
+  - **ffmpeg:** ✅ v8.1.1
+- **Run command on this machine:** `arch -arm64 python3 -m app.agent` (Python universal binary defaults to x86_64 slice; must force arm64 where pipecat/numpy packages are installed)
+- **Deprecation warnings (non-blocking):** `PipelineTask` → `PipelineWorker`, `PipelineRunner` → `WorkerRunner.add_workers()` in pipecat 1.3.0. Works as-is; update in A3 pass.
+- **Remaining blocker:** MiniMax TTS auth — try `Authorization: {key}` (no Bearer) and/or get TTS-specific key.
+- **Next:** fix MiniMax auth → full echo test (speak → STT → LLM → TTS) → A3 latency pass.
 
 ### Track B — Memory (Keshav)
 - Phase: **B0–B6 complete + Moss SDK wired**
@@ -36,8 +39,8 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 - Twilio SMS in `location.py` won't fire without real keys.
 - `capture.py` is explicit-trigger only ("remember this…") — not live auto-capture.
 - `fixtures/tts/*.mp3` not yet generated — needed for wifi-off beat (voice agent caches TTS clips).
-- **MiniMax TTS:** key invalid (status 2049). Response format known; decoder fixed (hex not base64). Working pending new key.
-- **LLM:** no key configured — pipeline will raise on startup until one is set.
+- **MiniMax TTS:** status 1004 (auth format rejected). Decoder confirmed correct (hex). Pending auth fix.
+- **VAD:** `SileroVADAnalyzer` imported but not yet wired — pipecat 1.3.0 removed VAD from transport params; now uses event-based `VADController`. STT buffer won't trigger until VAD emits `UserStartedSpeakingFrame`. Fix in A3.
 
 ## Language
 **English only.** `lang` param exists in contract but always pass `"en"`. Hindi add-on later.
@@ -45,8 +48,8 @@ Update this in the **same commit** as any change. Session bookends: re-read befo
 ## [CONFIRM] open items
 - **Moss:** ✅ on-device SDK confirmed (sub-10ms). Need `MOSS_PROJECT_ID` + `MOSS_PROJECT_KEY`.
 - **Supabase:** keys needed — `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`.
-- **MiniMax TTS (A):** ✗ current key invalid (status 2049). Get fresh key from portal.minimax.chat. Response format confirmed: `data["data"]["audio"]` (hex MP3). Voice ID to validate with working key.
-- **LLM (A):** set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or TrueFoundry vars. Any one unblocks the pipeline.
-- **LiveKit / Pipecat (A):** import paths; VAD frame names — confirm when running full pipeline.
-- **Groq STT (A):** ✅ confirmed working (English 0.46s). Hindi needs Devanagari text when re-enabled.
+- **MiniMax TTS (A):** ✗ status 1004 — try `Authorization: {key}` without `Bearer` prefix; or get TTS-specific key. Response format confirmed: `data["data"]["audio"]` (hex MP3).
+- **LiveKit / Pipecat (A):** ✅ import paths fixed for 1.3.0. VAD wiring still needed (VADController, see Faked above).
+- **TrueFoundry LLM (A):** ✅ confirmed — `openai/gpt-4o-mini @ https://gateway.truefoundry.ai`
+- **Groq STT (A):** ✅ confirmed (English 0.37s).
 - **Twilio vs push:** for wander alerts (`location.py`).

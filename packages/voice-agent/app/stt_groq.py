@@ -28,6 +28,7 @@ from pipecat.frames.frames import (  # type: ignore
     AudioRawFrame,
     Frame,
     TranscriptionFrame,
+    UserAudioRawFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
 )
@@ -80,7 +81,7 @@ class GroqWhisperSTTService(FrameProcessor):
             self._speech_start = time.perf_counter()
             await self.push_frame(frame, direction)
 
-        elif isinstance(frame, AudioRawFrame) and self._buffering:
+        elif isinstance(frame, (AudioRawFrame, UserAudioRawFrame)) and self._buffering:
             self._buffer.extend(frame.audio)
             # Audio consumed here — not pushed downstream.
 

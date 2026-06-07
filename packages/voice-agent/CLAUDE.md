@@ -3,13 +3,15 @@
 
 ---
 
-## Current state (updated 2026-06-06, session 2)
-- Phase: **A1 complete / A2 blocked on LLM key**
-- **Groq STT: ✅ validated** — "Who is this person?" → exact transcript, 0.46s, English detected
-- **MiniMax TTS: ✗ key invalid** (status_code=2049). Response format confirmed and decoder fixed. Need fresh key.
-- **LLM: no key set** — `create_llm()` will raise on startup. Set any one of: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or TrueFoundry vars.
-- **ffmpeg: ✅ installed** (v8.1.1)
-- Pipeline integrates LLM directly (no pipecat LLM service — avoids version import issues)
+## Current state (updated 2026-06-06, session 3)
+- Phase: **A2 ready — agent starts clean, LLM + LiveKit confirmed**
+- **Agent startup:** ✅ `LLM provider: TrueFoundry (openai/gpt-4o-mini @ https://gateway.truefoundry.ai)` — all pipeline processors link, LiveKit connecting
+- **Groq STT:** ✅ English 0.37s exact transcript
+- **MiniMax TTS:** ✗ status 1004 — auth format rejected. Try `Authorization: {key}` (no Bearer) or get TTS-specific key.
+- **LLM:** ✅ TrueFoundry configured and confirmed
+- **pipecat 1.3.0 import paths:** ✅ fixed — `pipecat.transports.livekit.transport`, `pipecat.audio.vad.silero`
+- **Run command on this machine:** `arch -arm64 python3 -m app.agent` (universal binary issue — must force arm64)
+- **VAD:** not yet wired — pipecat 1.3.0 removed VAD from transport params; needs `VADController` (A3)
 
 ## Language scope
 **English only.** Always pass `"lang": "en"`. Hindi deferred.
