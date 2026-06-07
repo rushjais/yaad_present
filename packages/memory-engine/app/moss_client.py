@@ -43,12 +43,18 @@ class _MossWrapper:
             )
         return self._session
 
+    @staticmethod
+    def _clean_meta(metadata: dict[str, Any]) -> dict[str, str]:
+        """Flatten metadata to str->str since Moss (PyO3) only accepts string values."""
+        import json
+        return {k: v if isinstance(v, str) else json.dumps(v) for k, v in metadata.items()}
+
     async def upsert(self, ref: str, text: str, metadata: dict[str, Any]) -> None:
         """Instant in-memory upsert — no network call. Powers add-fact-live."""
         from moss import DocumentInfo, MutationOptions
         session = await self._ensure()
         await session.add_docs(
-            [DocumentInfo(id=ref, text=text, metadata=metadata)],
+            [DocumentInfo(id=ref, text=text, metadata=self._clean_meta(metadata))],
             MutationOptions(upsert=True),
         )
         asyncio.create_task(self._push())
@@ -58,7 +64,11 @@ class _MossWrapper:
         from moss import DocumentInfo, MutationOptions
         session = await self._ensure()
         docs = [
-            DocumentInfo(id=it["id"], text=it["text"], metadata=it.get("metadata", {}))
+            DocumentInfo(
+                id=it["id"],
+                text=it["text"],
+                metadata=self._clean_meta(it.get("metadata", {})),
+            )
             for it in items
         ]
         await session.add_docs(docs, MutationOptions(upsert=True))
@@ -82,15 +92,26 @@ class _MossWrapper:
         if filters:
             opts.filter = filters
         result = await session.query(text, opts)
-        return [
-            {
-                "id": doc.id,
-                "text": doc.text or "",
-                "score": doc.score,
-                "metadata": doc.metadata or {},
-            }
-            for doc in result.docs
-        ]
+        import json
+        out = []
+        for doc in result.docs:
+            meta = doc.metadata or "{}"
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except Exception:
+                    meta = {}
+            # _clean_meta json-serialized nested dicts (Moss only accepts str→str).
+            # Re-parse so callers see the original structure (e.g. provenance dict).
+            if isinstance(meta, dict):
+                for k, v in list(meta.items()):
+                    if isinstance(v, str) and v.startswith(("{", "[")):
+                        try:
+                            meta[k] = json.loads(v)
+                        except Exception:
+                            pass
+            out.append({"id": doc.id, "text": doc.text or "", "score": doc.score, "metadata": meta})
+        return out
 
     async def _push(self) -> None:
         try:

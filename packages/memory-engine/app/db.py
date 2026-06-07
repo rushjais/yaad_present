@@ -62,6 +62,11 @@ async def write_memory(entity_type: str, payload: dict[str, Any]) -> dict:
     return {"id": row_id}
 
 
+async def update_event_participants(event_id: str, participant_ids: list[str]) -> None:
+    client = _client()
+    client.table("events").update({"participant_ids": participant_ids}).eq("id", event_id).execute()
+
+
 # ---------------------------------------------------------------------------
 # Fetch helpers used by retrieval / temporal
 # ---------------------------------------------------------------------------
@@ -73,6 +78,32 @@ async def fetch_med_logs_today(medication_id: str | None = None) -> list[dict]:
     if medication_id:
         q = q.eq("medication_id", medication_id)
     res = q.execute()
+    return res.data or []
+
+
+async def fetch_med_logs_in_window(start_ts: str, end_ts: str,
+                                    medication_id: str | None = None) -> list[dict]:
+    """Med logs taken between [start_ts, end_ts]. Used by temporal routing
+    for "did I take my X pill <time-window>" queries.
+    """
+    client = _client()
+    q = (
+        client.table("med_logs")
+        .select("*")
+        .gte("taken_ts", start_ts)
+        .lte("taken_ts", end_ts)
+        .order("taken_ts", desc=True)
+    )
+    if medication_id:
+        q = q.eq("medication_id", medication_id)
+    res = q.execute()
+    return res.data or []
+
+
+async def fetch_medications() -> list[dict]:
+    """All medications — used to resolve a medication_hint ('heart pill') to an id."""
+    client = _client()
+    res = client.table("medications").select("*").execute()
     return res.data or []
 
 
@@ -88,6 +119,24 @@ async def fetch_upcoming_events(before_ts: str) -> list[dict]:
         .execute()
     )
     return res.data or []
+
+
+async def fetch_events_in_window(start_ts: str, end_ts: str,
+                                  participant_id: str | None = None) -> list[dict]:
+    """Events with start_ts in [start_ts, end_ts]. Used by temporal routing."""
+    client = _client()
+    res = (
+        client.table("events")
+        .select("*")
+        .gte("start_ts", start_ts)
+        .lte("start_ts", end_ts)
+        .order("start_ts")
+        .execute()
+    )
+    rows = res.data or []
+    if participant_id:
+        rows = [r for r in rows if participant_id in (r.get("participant_ids") or [])]
+    return rows
 
 
 async def fetch_persons() -> list[dict]:

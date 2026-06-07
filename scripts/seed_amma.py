@@ -35,8 +35,9 @@ def prov(source: str = "seed") -> dict:
 
 
 async def main():
-    from packages.memory_engine.app.config import settings
-    from packages.memory_engine.app.moss_client import moss
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "packages", "memory-engine"))
+    from app.config import settings
+    from app.moss_client import moss
     from supabase import create_client
 
     db = create_client(settings.supabase_url, settings.supabase_service_key)
@@ -298,7 +299,14 @@ async def main():
     # -----------------------------------------------------------------------
     print(f"\n  Upserting {len(moss_items)} items to Moss index '{settings.moss_index}'...")
     await moss.upsert_batch(moss_items)
-    print("  Moss index populated.")
+    await moss._push()  # explicit push so process doesn't end before cloud sync
+    print("  Moss index populated and pushed to cloud.")
+
+    # verify retrieval works
+    hits = await moss.query("Who is Leo?", top_k=3)
+    print(f"  Verify: 'Who is Leo?' -> {len(hits)} results")
+    for h in hits:
+        print(f"    [{h['score']:.3f}] {h['text'][:70]}")
 
     print("\nSeed complete. Amma's life is ready.")
 

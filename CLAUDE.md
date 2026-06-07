@@ -64,11 +64,11 @@ The Karpathy principles above are the *how*. Below are Yaad's *what* and *why*.
 
 ## 0. CLAUDE.md — read first
 
-**Mission.** Build *Yaad*: a warm, bilingual (Hindi/English) voice companion for someone with early dementia, backed by an **episodic, temporal, self-updating memory graph built on Moss.** Open emotional ("who is this?" → "that's Leo, your grandson"); reveal technical (a memory layer on Moss — temporal state, instant updates, on-device retrieval).
+**Mission.** Build *Yaad*: a warm, bilingual (Hindi/English) voice companion for someone with early dementia, backed by **a living memory that lives inside the agent on Moss** — instant updates usable mid-conversation, fully on-device, sub-10ms so it never breaks the flow of talking. Open emotional ("who is this?" → "that's Leo, your grandson"); reveal technical (instant updates · wifi-off · sub-1s — Moss's headline features applied to a human life).
 
 **Why we're building it (keep this in the pitch, restrained):** Rushil's grandmother had Alzheimer's; by the end the hardest part was watching the people who loved her become strangers to her. Yaad is the thing we wish she'd had. Frame the demo as *"memory is beautiful,"* never *"look how sad this disease is."*
 
-**The rule that wins:** Moss is the hero. Every spoken answer is grounded in retrieved memory. Hero beats: (1) instant updates (family adds a fact → usable next sentence), (2) wifi-off still works (on-device), (3) temporal state ("did I take my pills today?"), (4) it's a *graph*, not flat RAG.
+**The rule that wins:** Moss is the hero. Every spoken answer is grounded in retrieved memory. Hero beats: (1) instant updates (family adds a fact → usable next sentence), (2) wifi-off still works (on-device), (3) temporal state ("did I take my pills today?"), (4) sub-10ms retrieval so the agent never feels laggy. These ARE Moss's headline features applied to a human life — don't reframe them as "graph vs RAG"; the differentiator is *living memory inside the agent*, not the index data structure.
 
 **Golden rules:**
 1. **Freeze the contract (§3) in hour 1.** All three tracks code against it. Never change it silently.
@@ -127,12 +127,12 @@ yaad/
   packages/
     memory-engine/           # TRACK B — Python/FastAPI [OWNER: Keshav]
       CLAUDE.md              # ← living, track-local
-      app/ (main, moss_client[CONFIRM], graph, retrieval, temporal, grounding,
-            capture, schemas, db, location, vision, reminders)
+      app/ (main, moss_client, graph, retrieval, temporal, grounding,
+            capture, intent, time_window, schemas, db, location, vision, reminders)
       tests/
     voice-agent/             # TRACK A — Python/Pipecat+LiveKit [OWNER: Rushil]
       CLAUDE.md              # ← living, track-local
-      (agent, transports[CONFIRM], tts_minimax[CONFIRM], stt_groq[CONFIRM],
+      (agent, transports[CONFIRM], tts_minimax, stt_groq,
        llm[CONFIRM], memory_client, reminders_client, fallback)
     caregiver-web/           # TRACK C — Next.js/TS [OWNER: Raghav]
       CLAUDE.md              # ← living, track-local
@@ -179,15 +179,19 @@ TWILIO_ACCOUNT_SID=  TWILIO_AUTH_TOKEN=  TWILIO_FROM=
 
 ## 5. TRACK B — Memory Engine [OWNER: Keshav]
 Turn Moss retrieval into a grounded, temporal, traversable memory graph behind the §3 API. **Keep `packages/memory-engine/CLAUDE.md` + STATUS.md current as you go (§0.5).**
-- **B0 (hour 1, all-hands):** finalize `schemas.py` == CONTRACT; export OpenAPI; FastAPI with fixture stubs so A/C unblock.
-- **B1 — Moss + write/index:** `moss_client.py` index/query/**instant upsert** [CONFIRM + on-device mode]; `/memory/write`. **Verify instant-update at office hours first**; if on-device shaky → Moss-cloud + reframe wifi-off as "edge-ready."
-- **B2 — graph + retrieval:** `graph.py` entities/episodes/edges + 1-hop traversal; `retrieval.py` `score=α·sem+β·recency+γ·salience+δ·graph_prox`, `recency=exp(-λ·Δt)`.
-- **B3 — grounding:** confidence gate τ → safe refusal; provenance on every item.
-- **B4 — temporal:** time-intent routing; "pills today" → today's med_log; "is X coming" → upcoming events.
-- **B5 — capture + timeline + reminders + location + (opt) vision:** `/memory/capture` (§10), `/memory/timeline`, `/reminders/due` (§12), `location.py` (§8), `vision.py` (§11).
-- **B6 — eval harness:** `smoke_test.py` + a ~20-case grounding/latency table for the demo.
 
-**Acceptance:** every query returns grounded items w/ provenance; ungrounded → safe refusal; a `/memory/write` retrievable < 1s; "pills today" reflects a just-logged dose; p95 within contract; **track CLAUDE.md + STATUS.md match the code.**
+**Phases B0–B6 (initial build) — complete.** See git history through `ce57744`.
+
+**Phase B7 — Robustness rebuild (in progress, 2026-06-06):** the Gate-1 retrieval logic was demo-fragile (regex temporal misses paraphrases, graph proximity never surfaced neighbors, capture was string-match only). Rebuilding the understanding layer so the demo holds under off-script phrasings — see STATUS.md "Track B" and `packages/memory-engine/CLAUDE.md` "B7 architecture" for the full plan. Key adds:
+- `app/intent.py` — hybrid (regex fast-path + Groq LLM fallback) → typed `Intent` consumed by all routers
+- `app/time_window.py` — relative-time parser ("yesterday", "this morning", "before lunch") in user-local tz
+- `temporal.py` rebuilt on `Intent` + per-medication routing; grounded negatives
+- `graph.py` + `retrieval.py` — real 1-hop expansion (neighbors appear in `items[]`); edge-type surfaced in text; relational shortcut
+- `capture.py` — Groq structured extraction + entity resolution (Moss-match top score ≥0.85 → UPDATE, not INSERT); edge creation; capture-confidence gate
+- `tests/robustness.py` — 30+ phrasings per demo beat, all must be grounded; adversarial set must be safe-refused
+- `scripts/reseed_moss.py` — idempotent Supabase → Moss reseed (the cloud `SessionIndex` does not reliably resume — empirically 0 results after server restart)
+
+**Acceptance:** every query returns grounded items w/ provenance; ungrounded → safe refusal; a `/memory/write` retrievable < 1s; "pills today" reflects a just-logged dose; p95 within contract; **all 5 demo beats stay grounded across 30+ phrasing variants** (robustness.py green); **track CLAUDE.md + STATUS.md match the code.**
 
 ---
 
@@ -239,7 +243,7 @@ Capture the 5 beats into `fixtures/`. `voice-agent/fallback.py`: 3s timeout on a
 **Parallel from 1.5** — each owner full-time + one supervised Claude Code agent against the frozen contract (agents do scaffolding/boilerplate **and keep their package CLAUDE.md/STATUS.md current**; humans own hard logic + integration; no two agents in one module). Integrate A↔B by ~hour 7.5; **★ core flawless by ~hour 11.5** (protect this). Then one optional (vision OR wander) + reminders + polish + resilience + record.
 
 ## 15. Demo script (~90s)
-Why (grandmother, restrained) → "who is this?" → "did I take my pills today?" → add-fact-live → wifi-off → reveal ("a memory graph on Moss — search engines organize information; we organize a human life") + Hindi line → close ("we gave a family their memories back") + sponsor thanks (Moss, MiniMax, LiveKit, Unsiloed).
+Why (grandmother, restrained) → "who is this?" → "did I take my pills today?" → add-fact-live → wifi-off → reveal ("a living memory on Moss — search engines retrieve documents; Moss lets us retrieve a life, instantly, on-device, in the time it takes a person to take a breath") + Hindi line → close ("we gave a family their memories back") + sponsor thanks (Moss, MiniMax, LiveKit, Unsiloed).
 
 ## 16. Definition of done
 ✅ 5 beats live AND from fixtures · ✅ grounded-only verified · ✅ instant-update <1s · ✅ temporal "pills today" · ✅ wifi-off · ✅ Hindi exchange · ✅ latency overlay + eval table · ✅ (opt) vision or wander + a reminder · ✅ 90s video + fixture path rehearsed · ✅ **all Claude files (root + 3 package CLAUDE.md + CONTRACT.md + STATUS.md) match the shipped code.**

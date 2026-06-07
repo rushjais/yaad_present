@@ -3,25 +3,34 @@
 
 ---
 
-## Current state (updated 2026-06-06, session 3)
-- Phase: **A2 ready — agent starts clean, LLM + LiveKit confirmed**
-- **Agent startup:** ✅ `LLM provider: TrueFoundry (openai/gpt-4o-mini @ https://gateway.truefoundry.ai)` — all pipeline processors link, LiveKit connecting
+## Current state (updated 2026-06-06, session end)
+- Phase: **A2 complete — all components live and validated**
+- **Agent startup:** ✅ `LLM provider: TrueFoundry (openai/gpt-4o-mini @ https://gateway.truefoundry.ai)`
 - **Groq STT:** ✅ English 0.37s exact transcript
-- **MiniMax TTS:** ✅ `status_code=0`, `speech-02-hd`, `English_Graceful_Lady`, `api.minimax.io` (no GroupId), 29KB MP3, round-trip verified.
-- **LLM:** ✅ TrueFoundry (`openai/gpt-4o-mini @ https://gateway.truefoundry.ai`)
-- **VAD:** ✅ `VADProcessor` wired in pipeline, Silero model loaded, emitting `VADUserStartedSpeakingFrame`/`VADUserStoppedSpeakingFrame`
-- **LiveKit:** ✅ fully connected, audio input running
-- **Run command on this machine:** `arch -arm64 python3 -m app.agent`
+- **MiniMax TTS:** ✅ `status_code=0`, `speech-02-hd`, `English_Graceful_Lady`, `api.minimax.io` (no GroupId), 29KB MP3, round-trip verified
+- **VAD:** ✅ `VADProcessor` wired, Silero loaded, `VADUserStartedSpeakingFrame`/`VADUserStoppedSpeakingFrame`
+- **LiveKit:** ✅ fully connected to `yaad-demo`, audio input running
+- **answer_draft routing:** ✅ `answer_draft` populated → emit verbatim (skips LLM); null → LLM from items[]
+- **--local mode:** ✅ `arch -arm64 python3 -m app.agent --local` (sounddevice mic/speakers)
 
 ## Language scope
 **English only.** Always pass `"lang": "en"`. Hindi deferred.
 
+## Keys confirmed (from Track B — copy into your .env)
+| Service | Key var | Endpoint / notes |
+|---|---|---|
+| **Groq STT** | `GROQ_API_KEY` | `whisper-large-v3-turbo` via Groq |
+| **MiniMax TTS** | `MINIMAX_API_KEY` | `POST https://api.minimax.io/v1/t2a_v2` — NO GroupId. model `speech-02-hd`, voice `English_Graceful_Lady`. Track B also documents `api.minimaxi.chat`; both work. |
+| **TrueFoundry** | `TRUEFOUNDRY_API_KEY` | `gateway.truefoundry.ai`, model `openai/gpt-4o-mini` — confirmed working |
+| **LiveKit** | `LIVEKIT_URL/KEY/SECRET` | `wss://keepsake-y39026vu.livekit.cloud`, room `yaad-demo` |
+
 ## What Track B has ready (all endpoints live on :8000)
 - `POST /memory/query   {text, lang:"en"}` → `{items, grounded, confidence, answer_draft}`
-- `POST /memory/temporal {text, lang:"en"}` → same shape
+- `POST /memory/temporal {text, lang:"en"}` → same shape (answer_draft pre-composed for temporal)
 - `POST /memory/write   {type, payload}` → `{id}`
 - `GET  /reminders/due` → `{due:[{kind, text, ref}]}`
-- All return fixture payloads until Moss/Supabase keys are set.
+- B7 `items[]` may contain graph-expanded neighbors — treat `items[].text` as authoritative, do NOT reparse.
+- Intent LLM-fallback path can spike ~300ms — fire speculatively on partial transcript (A3).
 
 ## Grounding system prompt (frozen — use verbatim)
 ```
@@ -32,35 +41,36 @@ Never invent people, events, or dates.
 Short, calm, warm. English only.
 ```
 
+## answer_draft routing (implemented in MemoryContextProcessor)
+- `answer_draft` populated → **emit verbatim, skip LLM** (temporal path — grounded negatives like "not yet taken" must not be re-composed)
+- `answer_draft` null → compose from items[] via LLM (semantic path)
+
 ## File responsibilities
 | File | Does |
 |---|---|
-| `app/agent.py` | Pipeline + entry point (`python -m app.agent`). LLM integrated into `MemoryContextProcessor`. |
-| `app/transports.py` | LiveKit transport + Silero VAD |
-| `app/stt_groq.py` | ✅ Groq Whisper STT — buffers utterance, times STT, emits TranscriptionFrame |
+| `app/agent.py` | Pipeline + entry point. `--local` flag for mic/speakers mode. LLM in `MemoryContextProcessor`. |
+| `app/transports.py` | LiveKit transport + Silero VAD factory |
+| `app/local_transport.py` | Sounddevice-based local audio transport (arm64 native) |
+| `app/stt_groq.py` | ✅ Groq Whisper STT — buffers utterance, VAD-triggered, emits TranscriptionFrame |
 | `app/stt_deepgram.py` | Kept as reference; not used |
-| `app/tts_minimax.py` | MiniMax TTS — hex-decode confirmed, times TTS, logs latency line |
+| `app/tts_minimax.py` | MiniMax TTS — key read at `__init__` (not module level), hex-decode, latency logging |
 | `app/llm.py` | LLM factory: TrueFoundry → OpenAI → Anthropic, raises if none configured |
 | `app/memory_client.py` | HTTP client → `/memory/query` + `/memory/temporal` |
 | `app/fallback.py` | 5-beat fixture responses for demo resilience |
 | `app/reminders_client.py` | Background poller for `/reminders/due` (A5) |
-| `app/validate_stt_tts.py` | Programmatic validation: macOS say → Groq STT + MiniMax TTS probe (no mic) |
-| `app/test_stt_tts.py` | Mic-based or WAV-file STT+TTS test |
+| `app/validate_stt_tts.py` | Programmatic validation: macOS say → Groq STT + MiniMax TTS (no mic) |
 
 ## Pipeline flow
 ```
-LiveKit audio in
-  → Silero VAD (barge-in: StartInterruptionFrame cancels TTS)
+LiveKit audio in (or sounddevice mic in --local mode)
+  → VADProcessor (Silero VAD → VADUserStartedSpeakingFrame / VADUserStoppedSpeakingFrame)
   → Groq Whisper STT (buffers utterance → transcribes, logs STT time)
-  → MemoryContextProcessor (memory query "en" + LLM streaming → TextFrame, logs memory+LLM time)
-  → SentenceAggregator (buffers into sentences)
-  → MiniMax TTS (logs TTS time + full [LATENCY] line)
-  → LiveKit audio out
-```
-
-Latency log format (per turn):
-```
-[LATENCY] STT 0.46s | memory 0.05s | LLM 0.60s | TTS 0.50s | total 1.61s
+  → MemoryContextProcessor:
+      answer_draft? → emit verbatim (temporal path, skip LLM)
+      else         → /memory/query + LLM streaming → TextFrame (semantic path)
+  → SentenceAggregator
+  → MiniMax TTS → TTSAudioRawFrame (logs [LATENCY] line)
+  → LiveKit audio out (or sounddevice speakers in --local mode)
 ```
 
 ## LLM auto-detection (llm.py)
@@ -78,36 +88,22 @@ Authorization: Bearer {MINIMAX_API_KEY}
 model: speech-02-hd | voice: English_Graceful_Lady | output_format: hex
 Response: data.data.audio = hex-encoded MP3; base_resp.status_code 0 = OK
 ```
-Audio decode: `bytes.fromhex(data["data"]["audio"])`
+Track B also documents `api.minimaxi.chat` as working — both domains accepted.
 
-## How to validate
+## How to run
 ```bash
-# Validate Groq STT + MiniMax probe (no mic):
-python -m app.validate_stt_tts
-
-# Mic test when you have audio input:
-python -m app.test_stt_tts
-python -m app.test_stt_tts path/to/file.wav
+arch -arm64 python3 -m app.agent           # LiveKit mode (yaad-demo room)
+arch -arm64 python3 -m app.agent --local   # local mic + speakers
+python -m app.validate_stt_tts             # validate STT+TTS without mic
 ```
 
-## Next steps
-1. ✅ Groq STT validated
-2. ✅ MiniMax response format confirmed; decoder fixed
-3. **Now:** get a valid LLM key → `python -m app.agent` should start cleanly
-4. **Now:** get valid MiniMax TTS key → re-run `validate_stt_tts.py` for full round-trip
-5. A3 latency pass once A2 is running
-6. A4: cache TTS clips for wifi-off beat
-7. A5: wire reminders into pipeline output
-
-## [CONFIRM] open items
-- **MiniMax:** need fresh API key (current invalid). Voice ID `Calm_Woman` assumed — confirm with working key.
-- **LLM:** set any one key (see LLM auto-detection above)
-- **LiveKit / Pipecat:** import paths; VAD frame names — pending full pipeline run
-- **Groq STT:** ✅ confirmed
+## Next steps (A3 onwards)
+1. ✅ A0–A2 complete
+2. **A3:** latency pass — fire memory query speculatively on partial transcript; target <1s end-to-end
+3. **A4:** pre-cache TTS clips for all 4 fixture beats (wifi-off demo requires cached audio)
+4. **A5:** wire reminders into pipeline speech output
 
 ## Faked / TODO real
-- MiniMax TTS: key invalid — decoder fixed, pending valid key
-- TrueFoundry: not configured — LLM falls back to OpenAI/Anthropic if those keys are set
-- LiveKit transport: not tested (requires room + keys)
+- `fixtures/tts/*.mp3` — NOT YET generated; needed for wifi-off beat (A4)
 - `SentenceAggregator`: local impl — swap for pipecat built-in if version supports it
-- Reminders: poller wired but not integrated into pipeline speech output yet (A5)
+- `reminders_client.py`: poller wired but not integrated into pipeline speech output yet (A5)

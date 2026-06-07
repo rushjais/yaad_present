@@ -1,70 +1,67 @@
 """
-B2 — Entity/episode/edge graph + 1-hop traversal.
-Entities and edges are stored in Supabase; graph traversal expands results at query time.
+B7.1 — Graph cache (trimmed): entity-text lookup only.
+
+What used to live here (edges, walks, relation phrasing) was killed in v2:
+relationships live in the Moss chunk text (set at seed time), so retrieval
+never needs to walk a graph. The only remaining job of this module is to
+let `capture.py` look up an existing entity's display text after it
+resolves an extracted name against Moss.
+
+Cache is loaded once at startup, refreshed after every `write_memory`.
 """
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from typing import Optional
+
+from .config import settings
 
 
-async def get_neighbors(ref: str, depth: int = 1) -> list[dict]:
-    """
-    Return entities connected to `ref` via edges, up to `depth` hops.
-    Currently 1-hop only (depth > 1 reserved for future).
-    """
-    from .config import settings
-    try:
-        from supabase import create_client
-        client = create_client(settings.supabase_url, settings.supabase_service_key)
-        res = (
-            client.table("edges")
-            .select("*")
-            .or_(f"from_ref.eq.{ref},to_ref.eq.{ref}")
-            .execute()
-        )
-        edges = res.data or []
-    except Exception:
-        return []
-
-    neighbor_refs = set()
-    for e in edges:
-        if e["from_ref"] == ref:
-            neighbor_refs.add(e["to_ref"])
-        else:
-            neighbor_refs.add(e["from_ref"])
-
-    return [{"ref": r, "weight": _edge_weight(edges, ref, r)} for r in neighbor_refs]
+_lock = asyncio.Lock()
+_entity_text: dict[str, str] = {}     # ref → display text (e.g. "person:abc" → "Leo. Amma's grandson…")
+_loaded = False
 
 
-def _edge_weight(edges: list[dict], ref: str, neighbor: str) -> float:
-    for e in edges:
-        if (e["from_ref"] == ref and e["to_ref"] == neighbor) or \
-           (e["to_ref"] == ref and e["from_ref"] == neighbor):
-            return float(e.get("weight", 1.0))
-    return 1.0
+def _client():
+    from supabase import create_client
+    return create_client(settings.supabase_url, settings.supabase_service_key)
 
 
-async def write_edge(from_ref: str, to_ref: str, edge_type: str, weight: float = 1.0) -> None:
-    """Store a relationship edge in Supabase."""
-    import uuid
-    from .config import settings
-    try:
-        from supabase import create_client
-        client = create_client(settings.supabase_url, settings.supabase_service_key)
-        client.table("edges").upsert({
-            "id": str(uuid.uuid4()),
-            "from_ref": from_ref,
-            "to_ref": to_ref,
-            "type": edge_type,
-            "weight": weight,
-        }).execute()
-    except Exception:
-        pass
+# Chunk-text helpers — keep in sync with scripts/reseed_moss.py so the cache
+# matches what Moss is actually indexing. (Capture uses these only to render
+# fallback labels for entity refs; Moss text is the source of truth for
+# retrieval.)
+def _person_label(p: dict) -> str:
+    return p.get("name", "person")
 
 
-def graph_proximity_score(neighbor_weights: list[dict], ref: str) -> float:
-    """Score boost for items connected to a high-weight hub. Max 1.0."""
-    if not neighbor_weights:
-        return 0.0
-    total = sum(n["weight"] for n in neighbor_weights)
-    return min(total / (len(neighbor_weights) * 2), 1.0)
+def _place_label(pl: dict) -> str:
+    return pl.get("name", "place")
+
+
+def _med_label(m: dict) -> str:
+    return m.get("name", "medication")
+
+
+async def load_cache(force: bool = False) -> None:
+    """Load entity display labels into memory. ~1s on startup, free thereafter."""
+    global _loaded
+    async with _lock:
+        if _loaded and not force:
+            return
+        client = _client()
+        text: dict[str, str] = {}
+        for p in (client.table("persons").select("*").execute().data or []):
+            text[f"person:{p['id']}"] = _person_label(p)
+        for pl in (client.table("places").select("*").execute().data or []):
+            text[f"place:{pl['id']}"] = _place_label(pl)
+        for m in (client.table("medications").select("*").execute().data or []):
+            text[f"medication:{m['id']}"] = _med_label(m)
+        _entity_text.clear()
+        _entity_text.update(text)
+        _loaded = True
+
+
+def get_entity_text(ref: str) -> Optional[str]:
+    """Display label for an entity ref (used by capture to attribute proposals)."""
+    return _entity_text.get(ref)

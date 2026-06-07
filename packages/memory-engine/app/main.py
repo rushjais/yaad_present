@@ -5,8 +5,9 @@ Real implementation wired in progressively through B1–B5.
 """
 from __future__ import annotations
 
+import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Query
@@ -32,6 +33,43 @@ from .schemas import (
 )
 
 app = FastAPI(title="Yaad Memory Engine", version="0.1.0")
+
+
+@app.on_event("startup")
+async def _reseed_moss_on_startup() -> None:
+    """Repopulate the in-process Moss session from Supabase.
+
+    Moss `SessionIndex.session(index_name=...)` does NOT reliably resume the
+    cloud index in a fresh process — queries return 0 results until docs are
+    added to the in-memory session. The fix is to push the canonical Supabase
+    state into this process's session at startup. ~3-5s cost, self-healing.
+
+    Skipped if YAAD_SKIP_RESEED=1 (useful for tests that don't need data).
+    """
+    import os
+    if os.environ.get("YAAD_SKIP_RESEED") == "1":
+        return
+    try:
+        import sys
+        scripts_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts")
+        scripts_dir = os.path.abspath(scripts_dir)
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        from reseed_moss import reseed_moss  # type: ignore
+        rc = await reseed_moss(verify=False, verbose=False)
+        print(f"[startup] Moss session reseeded (rc={rc})")
+
+        # Warm graph entity-text cache (used by capture + /memory/write). Saves
+        # ~300ms cold-cache latency on the first add-fact-live request, which
+        # used to push the smoke test just over the <1s contract.
+        try:
+            from .graph import load_cache
+            await load_cache()
+            print("[startup] graph entity cache warmed")
+        except Exception as e:
+            print(f"[startup] graph cache warm failed (non-fatal): {e!r}")
+    except Exception as e:
+        print(f"[startup] Moss reseed failed: {e!r}")
 
 # ---------------------------------------------------------------------------
 # Lazy-imported real modules (wired after Gate 0)
@@ -150,12 +188,189 @@ async def memory_temporal(req: MemoryQueryRequest):
 
 @app.post("/memory/write", response_model=MemoryWriteResponse)
 async def memory_write(req: MemoryWriteRequest):
+    """Caregiver-web add-fact-live path. Writes to Supabase AND upserts the
+    new chunk to Moss in the same request so the next /memory/query can find it.
+    Without this Moss step, add-fact-live silently doesn't work — DB has the row
+    but the voice agent can't see it. db.py's old comment ('triggered by caller')
+    documented the gap; this handler is the caller."""
     try:
         from .db import write_memory
         result = await write_memory(req.type.value, req.payload)
+
+        if req.type.value == "event":
+            try:
+                participant_ids = await _resolve_event_participants(req.payload)
+                if participant_ids:
+                    from .db import update_event_participants
+                    await update_event_participants(result["id"], participant_ids)
+                    req.payload["participant_ids"] = participant_ids
+            except Exception:
+                pass
+
+        # Index in Moss so it's retrievable on the next query
+        try:
+            entity_type = req.type.value
+            ref = f"{entity_type}:{result['id']}"
+            text = _build_chunk_text(entity_type, req.payload)
+            if text:
+                from .moss_client import moss
+                await moss.upsert(ref, text, {
+                    "type": entity_type,
+                    "name": str(req.payload.get("name") or req.payload.get("title") or ""),
+                    "provenance": {
+                        "source": "caregiver_web",
+                        "added_by": "caregiver",
+                        "added_ts": datetime.now(timezone.utc).isoformat(),
+                    },
+                })
+                # Refresh graph entity-text cache so capture's entity resolution
+                # sees this new entity immediately.
+                try:
+                    from .graph import load_cache
+                    await load_cache(force=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass  # Moss failed — DB still has the row; reseed will pick it up
+
         return MemoryWriteResponse(**result)
     except Exception:
         return MemoryWriteResponse(id="fixture-id-" + str(int(time.time())))
+
+
+PERSON_RESOLUTION_THRESHOLD = 0.85
+
+
+async def _resolve_event_participants(payload: dict) -> list[str]:
+    """Resolve people mentioned in event title/notes into participant ids.
+
+    Candidate extraction is intentionally conservative: capitalized name-like
+    spans cover normal entries ("Sarah visit"), while known person names and
+    aliases are matched case-insensitively so lowercase entries ("sarah visit")
+    still backfill. Moss remains the authority for accepting a candidate.
+    """
+    text = " ".join(str(payload.get(k) or "") for k in ("title", "notes")).strip()
+    existing = [str(p) for p in (payload.get("participant_ids") or []) if p]
+    if not text:
+        return existing
+
+    candidates = await _event_person_candidates(text)
+    if not candidates:
+        return existing
+
+    from .moss_client import moss
+
+    resolved = list(existing)
+    seen = set(existing)
+    for candidate in candidates:
+        hits = await moss.query(candidate, top_k=3)
+        if not hits:
+            continue
+        top = hits[0]
+        meta = top.get("metadata", {}) or {}
+        if meta.get("type") != "person":
+            continue
+        if float(top.get("score", 0.0)) < PERSON_RESOLUTION_THRESHOLD:
+            continue
+        if not _hit_confirms_person_name(candidate, top):
+            continue
+
+        person_id = top["id"].split(":", 1)[-1]
+        if person_id not in seen:
+            resolved.append(person_id)
+            seen.add(person_id)
+
+    return resolved
+
+
+async def _event_person_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        value = " ".join(value.split()).strip(" ,.:;!?()[]{}'\"")
+        key = value.lower()
+        if len(value) < 2 or key in seen:
+            return
+        seen.add(key)
+        candidates.append(value)
+
+    # Normal title-cased entries: "Sarah visits", "Leo lunch".
+    for match in re.finditer(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b", text):
+        span = match.group(0)
+        add(span)
+        for part in span.split():
+            add(part)
+
+    # Lowercase protection: match known person names and aliases regardless of
+    # how the caregiver typed them, then let Moss verify the final identity.
+    try:
+        from .db import fetch_persons
+        for person in await fetch_persons():
+            add_if_present = [person.get("name"), *(person.get("aliases") or [])]
+            for name in add_if_present:
+                if name and _contains_name(text, str(name)):
+                    add(str(name))
+    except Exception:
+        pass
+
+    return candidates[:12]
+
+
+def _contains_name(text: str, name: str) -> bool:
+    pattern = r"(?<!\w)" + re.escape(name) + r"(?!\w)"
+    return re.search(pattern, text, re.IGNORECASE) is not None
+
+
+def _hit_confirms_person_name(candidate: str, hit: dict) -> bool:
+    meta = hit.get("metadata", {}) or {}
+    hit_name = str(meta.get("name") or "")
+    hit_text = str(hit.get("text") or "")
+    return (
+        _contains_name(hit_text, candidate)
+        or bool(hit_name and hit_name.lower() == candidate.lower())
+        or bool(hit_name and _contains_name(candidate, hit_name))
+    )
+
+
+def _build_chunk_text(entity_type: str, payload: dict) -> str:
+    """Render a Moss chunk for a freshly-written entity. Matches the chunk
+    format in scripts/reseed_moss.py so search behaves consistently with
+    seed-time data. Edges aren't known at write-time, so relationship phrases
+    aren't included — the next reseed picks those up if Track C adds edges.
+    """
+    name = (payload.get("name") or payload.get("title") or "").strip()
+    notes = (payload.get("notes") or "").strip()
+
+    if entity_type == "person":
+        relationship = (payload.get("relationship") or "").strip()
+        aliases = payload.get("aliases") or []
+        parts = [name]
+        if relationship:
+            parts.append(relationship)
+        if notes:
+            parts.append(notes)
+        if aliases:
+            parts.append(f"Also called {', '.join(aliases)}.")
+        return ". ".join(s.rstrip(".") for s in parts if s) + "."
+
+    if entity_type == "place":
+        return f"{name}. {notes}".strip().rstrip(".") + "."
+
+    if entity_type == "medication":
+        return f"{name} — Amma's medication. {notes}".strip().rstrip(".") + "."
+
+    if entity_type == "event":
+        return f"{name}. {notes}".strip().rstrip(".") + "."
+
+    if entity_type == "story":
+        return f"Story: {notes or name}"
+
+    if entity_type == "episode":
+        return f"{payload.get('summary') or notes or name}".strip()
+
+    # med_log doesn't need a chunk (queried via Supabase by temporal)
+    return ""
 
 
 @app.post("/memory/capture", response_model=MemoryCaptureResponse)
