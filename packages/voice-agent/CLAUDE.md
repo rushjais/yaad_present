@@ -7,7 +7,7 @@
 - Phase: **A2 ready — agent starts clean, LLM + LiveKit confirmed**
 - **Agent startup:** ✅ `LLM provider: TrueFoundry (openai/gpt-4o-mini @ https://gateway.truefoundry.ai)` — all pipeline processors link, LiveKit connecting
 - **Groq STT:** ✅ English 0.37s exact transcript
-- **MiniMax TTS:** ✗ key lacks T2A access (status 1004). Auth format confirmed correct: Bearer, GroupId in URL, domain `api.minimax.io`. Key needs TTS permissions.
+- **MiniMax TTS:** ✅ `status_code=0`, `speech-02-hd`, `English_Graceful_Lady`, `api.minimax.io` (no GroupId), 29KB MP3, round-trip verified.
 - **LLM:** ✅ TrueFoundry (`openai/gpt-4o-mini @ https://gateway.truefoundry.ai`)
 - **VAD:** ✅ `VADProcessor` wired in pipeline, Silero model loaded, emitting `VADUserStartedSpeakingFrame`/`VADUserStoppedSpeakingFrame`
 - **LiveKit:** ✅ fully connected, audio input running
@@ -71,14 +71,14 @@ Latency log format (per turn):
 4. none                                                             → RuntimeError with clear message
 ```
 
-## MiniMax TTS confirmed response format
-```python
-# Confirmed via API probe 2026-06-06 (status_code=2049 but response shape verified)
-data["data"]["audio"]  # hex-encoded MP3 string  ← NOT base64, NOT audio_file
-mp3_bytes = bytes.fromhex(data["data"]["audio"])
+## MiniMax TTS — confirmed spec (2026-06-06)
 ```
-**Key issue:** current `MINIMAX_API_KEY` is invalid for T2A endpoint (status_code=2049).
-→ Get fresh key from portal.minimax.chat and update `.env`.
+POST https://api.minimax.io/v1/t2a_v2   ← NO GroupId (that's China-platform only)
+Authorization: Bearer {MINIMAX_API_KEY}
+model: speech-02-hd | voice: English_Graceful_Lady | output_format: hex
+Response: data.data.audio = hex-encoded MP3; base_resp.status_code 0 = OK
+```
+Audio decode: `bytes.fromhex(data["data"]["audio"])`
 
 ## How to validate
 ```bash

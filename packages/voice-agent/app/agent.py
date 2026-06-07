@@ -72,16 +72,17 @@ def _format_memory_context(resp: dict) -> str:
     return "\n".join(f"- {item['text']}" for item in resp["items"][:5])
 
 
-def _build_messages(user_text: str, memory_resp: dict) -> list[dict]:
+def _build_messages_semantic(user_text: str, memory_resp: dict) -> list[dict]:
+    """Build LLM messages for the SEMANTIC path (answer_draft is absent).
+
+    Only called when answer_draft is null/empty — meaning memory returned
+    ranked items[] to compose from, or nothing (safe refusal applies).
+    """
     ctx = _format_memory_context(memory_resp)
-    if ctx:
-        user_content = f"[MEMORY CONTEXT]\n{ctx}\n\n[USER SAID]: {user_text}"
-    else:
-        draft = memory_resp.get("answer_draft", "")
-        user_content = (
-            f"[MEMORY CONTEXT — low confidence]\nSuggested response: {draft}\n\n[USER SAID]: {user_text}"
-            if draft else user_text
-        )
+    user_content = (
+        f"[MEMORY CONTEXT]\n{ctx}\n\n[USER SAID]: {user_text}"
+        if ctx else user_text
+    )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
@@ -150,19 +151,29 @@ class MemoryContextProcessor(FrameProcessor):
             resp = get_fixture(frame.text)
         self._tracker.memory = time.perf_counter() - t0
 
-        # LLM streaming
-        messages = _build_messages(frame.text, resp)
-        t1 = time.perf_counter()
-        first_token = True
-        try:
-            async for chunk in self._llm.complete(messages):
-                if first_token:
-                    self._tracker.llm = time.perf_counter() - t1
-                    first_token = False
-                await self.push_frame(TextFrame(chunk))
-        except Exception as e:
-            logger.error("LLM error: %s", e)
-            await self.push_frame(TextFrame("I'm sorry, I'm having trouble thinking right now."))
+        answer_draft = (resp.get("answer_draft") or "").strip()
+
+        if answer_draft:
+            # TEMPORAL PATH — answer_draft encodes absence facts ("not yet taken")
+            # that have no semantic chunk. Emit verbatim; never let the LLM re-compose
+            # or it will silently drop medical negations like "not yet."
+            logger.info("answer_draft present — emitting directly, skipping LLM")
+            self._tracker.llm = 0.0
+            await self.push_frame(TextFrame(answer_draft))
+        else:
+            # SEMANTIC PATH — compose grounded answer from items[] via LLM
+            messages = _build_messages_semantic(frame.text, resp)
+            t1 = time.perf_counter()
+            first_token = True
+            try:
+                async for chunk in self._llm.complete(messages):
+                    if first_token:
+                        self._tracker.llm = time.perf_counter() - t1
+                        first_token = False
+                    await self.push_frame(TextFrame(chunk))
+            except Exception as e:
+                logger.error("LLM error: %s", e)
+                await self.push_frame(TextFrame("I'm sorry, I'm having trouble thinking right now."))
 
 
 # ---------------------------------------------------------------------------
