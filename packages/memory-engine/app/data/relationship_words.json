@@ -1,0 +1,17 @@
+{
+  "grandson": {"edge_type": "grandson_of", "display_phrase": "{from} is {to}'s grandson"},
+  "granddaughter": {"edge_type": "granddaughter_of", "display_phrase": "{from} is {to}'s granddaughter"},
+  "daughter": {"edge_type": "daughter_of", "display_phrase": "{from} is {to}'s daughter"},
+  "son": {"edge_type": "son_of", "display_phrase": "{from} is {to}'s son"},
+  "mother": {"edge_type": "mother_of", "display_phrase": "{from} is {to}'s mother"},
+  "father": {"edge_type": "father_of", "display_phrase": "{from} is {to}'s father"},
+  "sister": {"edge_type": "sister_of", "display_phrase": "{from} is {to}'s sister"},
+  "brother": {"edge_type": "brother_of", "display_phrase": "{from} is {to}'s brother"},
+  "husband": {"edge_type": "husband_of", "display_phrase": "{from} is {to}'s husband"},
+  "wife": {"edge_type": "wife_of", "display_phrase": "{from} is {to}'s wife"},
+  "spouse": {"edge_type": "spouse_of", "display_phrase": "{from} is {to}'s spouse"},
+  "aunt": {"edge_type": "aunt_of", "display_phrase": "{from} is {to}'s aunt"},
+  "uncle": {"edge_type": "uncle_of", "display_phrase": "{from} is {to}'s uncle"},
+  "address": {"edge_type": "lives_at", "display_phrase": "{from} lives at {to}"},
+  "home": {"edge_type": "lives_at", "display_phrase": "{from} lives at {to}"}
+}

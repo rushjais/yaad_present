@@ -59,6 +59,11 @@ async def main():
             "relationship": "grandson",
             "aliases": ["Leo beta", "beta"],
             "notes": "22 years old, studying computer science at Georgia Tech. Visits every Sunday. Loves chess and cooking. Very patient with Amma.",
+            "preferences": {
+                "hobby": "chess",
+                "food": "cooking",
+                "study": "computer science at Georgia Tech",
+            },
             "is_reassurance_contact": False,
             "alert_priority": 2,
             "provenance": prov(),
@@ -68,7 +73,11 @@ async def main():
             "name": "Sarah",
             "relationship": "daughter",
             "aliases": ["Sarah beti", "beti"],
-            "notes": "55 years old. Lives 15 minutes away. Visits Tuesday and Friday afternoons for tea. Primary caregiver.",
+            "notes": "55 years old. Lives at 89 Maple Lane, 15 minutes away. Visits Tuesday and Friday afternoons for tea. Primary caregiver.",
+            "preferences": {
+                "visit_day": "Tuesday and Friday afternoons",
+                "food": "samosas",
+            },
             "is_reassurance_contact": True,
             "alert_priority": 1,
             "provenance": prov(),
@@ -79,6 +88,12 @@ async def main():
             "relationship": "self",
             "aliases": ["herself"],
             "notes": "84 years old. Loves jasmine tea, Bollywood songs from the 1960s, and her evening walk.",
+            "preferences": {
+                "music": "Bollywood songs from the 1960s",
+                "drink": "jasmine tea",
+                "activity": "evening walk at Lullwater Park",
+                "food": "samosas",
+            },
             "is_reassurance_contact": False,
             "provenance": prov(),
         },
@@ -86,12 +101,6 @@ async def main():
 
     for p in persons:
         db.table("persons").upsert(p).execute()
-        text = f"{p['name']} ({p['relationship']}): {p['notes']}"
-        moss_items.append({
-            "id": f"person:{p['id']}",
-            "text": text,
-            "metadata": {"type": "person", "name": p["name"], "provenance": prov()},
-        })
 
     print(f"  persons: {len(persons)} seeded")
 
@@ -124,12 +133,6 @@ async def main():
 
     for place in places:
         db.table("places").upsert(place).execute()
-        text = f"{place['name']}: {place['notes']}"
-        moss_items.append({
-            "id": f"place:{place['id']}",
-            "text": text,
-            "metadata": {"type": "place", "name": place["name"], "provenance": prov()},
-        })
 
     print(f"  places: {len(places)} seeded")
 
@@ -158,12 +161,6 @@ async def main():
 
     for med in medications:
         db.table("medications").upsert(med).execute()
-        text = f"Medication: {med['name']}. {med['notes']}"
-        moss_items.append({
-            "id": f"medication:{med['id']}",
-            "text": text,
-            "metadata": {"type": "medication", "name": med["name"], "provenance": prov()},
-        })
 
     print(f"  medications: {len(medications)} seeded")
 
@@ -217,12 +214,6 @@ async def main():
 
     for e in events:
         db.table("events").upsert(e).execute()
-        text = f"Event: {e['title']}. {e['notes']}"
-        moss_items.append({
-            "id": f"event:{e['id']}",
-            "text": text,
-            "metadata": {"type": "event", "title": e["title"], "provenance": prov()},
-        })
 
     print(f"  events: {len(events)} seeded")
 
@@ -236,6 +227,7 @@ async def main():
             "text": "Leo beat Amma at chess for the first time when he was 12. She was so proud she told all the neighbors. He still reminds her every visit.",
             "people_ids": [leo_id],
             "occurred_ts": days_ago(3650),
+            "category": "family",
             "provenance": prov(),
         },
         {
@@ -244,6 +236,7 @@ async def main():
             "text": "Amma planted jasmine in the backyard the year she moved to Elmwood Ave, forty years ago. She waters it every morning before chai.",
             "people_ids": [amma_id],
             "occurred_ts": days_ago(14600),
+            "category": "place",
             "provenance": prov(),
         },
         {
@@ -252,13 +245,15 @@ async def main():
             "text": "Sarah learned all her recipes from Amma. The biryani recipe has been in the family for three generations.",
             "people_ids": [sarah_id, amma_id],
             "occurred_ts": days_ago(10950),
+            "category": "family",
             "provenance": prov(),
         },
     ]
 
     for s in stories:
         db.table("stories").upsert(s).execute()
-        text = f"Story — {s['title']}: {s['text']}"
+        from app.chunks import render
+        text = render("story", s)
         moss_items.append({
             "id": f"story:{s['id']}",
             "text": text,
@@ -302,9 +297,9 @@ async def main():
     await moss._push()  # explicit push so process doesn't end before cloud sync
     print("  Moss index populated and pushed to cloud.")
 
-    # verify retrieval works
-    hits = await moss.query("Who is Leo?", top_k=3)
-    print(f"  Verify: 'Who is Leo?' -> {len(hits)} results")
+    # verify episodic retrieval works
+    hits = await moss.query("Tell me the chess story", top_k=3)
+    print(f"  Verify: 'Tell me the chess story' -> {len(hits)} results")
     for h in hits:
         print(f"    [{h['score']:.3f}] {h['text'][:70]}")
 

@@ -37,7 +37,7 @@ def assess_grounding(
         }
 
     top_score = items[0].score
-    grounded = top_score >= settings.confidence_threshold
+    grounded = top_score >= settings.episodic_tau
 
     answer_draft: str | None
     if grounded:

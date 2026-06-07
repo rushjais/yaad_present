@@ -78,6 +78,9 @@ class Person(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     notes: str = ""
     photo_ref: str | None = None
+    preferences: dict[str, str] = Field(default_factory=dict)
+    face_embedding: Any | None = None
+    phone: str | None = None
     is_reassurance_contact: bool = False
     alert_priority: int | None = None
     provenance: Provenance | None = None
@@ -127,6 +130,7 @@ class Story(BaseModel):
     text: str
     people_ids: list[UUID] = Field(default_factory=list)
     occurred_ts: datetime | None = None
+    category: str | None = None
     provenance: Provenance | None = None
 
 
@@ -288,3 +292,4 @@ class HealthResponse(BaseModel):
     moss_ok: bool
     db_ok: bool
     latency_ms: float
+    moss_doc_count: int | None = None

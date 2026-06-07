@@ -17,7 +17,8 @@ from typing import Optional
 
 try:
     from zoneinfo import ZoneInfo
-    _LOCAL_TZ = ZoneInfo("America/New_York")
+    from .config import settings
+    _LOCAL_TZ = ZoneInfo(settings.patient_tz)
 except Exception:
     _LOCAL_TZ = None
 

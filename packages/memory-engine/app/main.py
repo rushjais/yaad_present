@@ -10,8 +10,18 @@ import time
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, File, Query, UploadFile
+# Load .env into process env so modules using raw os.getenv (e.g.
+# location.py reading TWILIO_*, YAAD_DEMO_RECIPIENT) see the values.
+# pydantic-settings reads .env on its own, but raw os.getenv doesn't.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+
+from .config import settings
 from .schemas import (
     EntityType,
     HealthResponse,
@@ -34,6 +44,12 @@ from .schemas import (
 )
 
 app = FastAPI(title="Yaad Memory Engine", version="0.1.0")
+
+
+def _maybe_fixture(exc: Exception, fixture: Any) -> Any:
+    if settings.demo_mode:
+        return fixture
+    raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.on_event("startup")
@@ -59,6 +75,10 @@ async def _reseed_moss_on_startup() -> None:
         from reseed_moss import reseed_moss  # type: ignore
         rc = await reseed_moss(verify=False, verbose=False)
         print(f"[startup] Moss session reseeded (rc={rc})")
+        from . import moss_client
+        if moss_client.moss.id() != moss_client.moss.id():
+            raise RuntimeError("moss singleton mismatch")
+        print("[startup] moss singleton verified")
 
         # Warm graph entity-text cache (used by capture + /memory/write). Saves
         # ~300ms cold-cache latency on the first add-fact-live request, which
@@ -170,21 +190,29 @@ FIXTURE_VISION = VisionRecognizeResponse(
 @app.post("/memory/query", response_model=MemoryQueryResponse)
 async def memory_query(req: MemoryQueryRequest):
     try:
-        from .retrieval import query_memory
-        result = await query_memory(req.text, req.lang)
+        if settings.archetype_router_enabled:
+            from .router import dispatch
+            result = await dispatch(req.text, req.lang)
+        else:
+            from .retrieval import query_memory
+            result = await query_memory(req.text, req.lang)
         return MemoryQueryResponse(**result)
-    except Exception:
-        return FIXTURE_QUERY_RESPONSE
+    except Exception as e:
+        return _maybe_fixture(e, FIXTURE_QUERY_RESPONSE)
 
 
 @app.post("/memory/temporal", response_model=MemoryQueryResponse)
 async def memory_temporal(req: MemoryQueryRequest):
     try:
-        from .temporal import query_temporal
-        result = await query_temporal(req.text, req.lang)
+        if settings.archetype_router_enabled:
+            from .router import dispatch
+            result = await dispatch(req.text, req.lang)
+        else:
+            from .temporal import query_temporal
+            result = await query_temporal(req.text, req.lang)
         return MemoryQueryResponse(**result)
-    except Exception:
-        return FIXTURE_TEMPORAL_RESPONSE
+    except Exception as e:
+        return _maybe_fixture(e, FIXTURE_TEMPORAL_RESPONSE)
 
 
 @app.post("/memory/write", response_model=MemoryWriteResponse)
@@ -208,15 +236,17 @@ async def memory_write(req: MemoryWriteRequest):
             except Exception:
                 pass
 
-        # Index in Moss so it's retrievable on the next query
+        # Index episodic content only. Structural entities are retrieved from
+        # Supabase and the edge cache, not Moss.
         try:
             entity_type = req.type.value
             ref = f"{entity_type}:{result['id']}"
-            text = _build_chunk_text(entity_type, req.payload)
+            text = _episodic_moss_text(entity_type, req.payload)
             if text:
                 from .moss_client import moss
                 await moss.upsert(ref, text, {
                     "type": entity_type,
+                    "kind": str(req.payload.get("kind") or ""),
                     "name": str(req.payload.get("name") or req.payload.get("title") or ""),
                     "provenance": {
                         "source": "caregiver_web",
@@ -224,19 +254,14 @@ async def memory_write(req: MemoryWriteRequest):
                         "added_ts": datetime.now(timezone.utc).isoformat(),
                     },
                 })
-                # Refresh graph entity-text cache so capture's entity resolution
-                # sees this new entity immediately.
-                try:
-                    from .graph import load_cache
-                    await load_cache(force=True)
-                except Exception:
-                    pass
+            from .edges_cache import edges_cache
+            await edges_cache.load(force=True)
         except Exception:
             pass  # Moss failed — DB still has the row; reseed will pick it up
 
         return MemoryWriteResponse(**result)
-    except Exception:
-        return MemoryWriteResponse(id="fixture-id-" + str(int(time.time())))
+    except Exception as e:
+        return _maybe_fixture(e, MemoryWriteResponse(id="fixture-id-" + str(int(time.time()))))
 
 
 PERSON_RESOLUTION_THRESHOLD = 0.85
@@ -259,20 +284,18 @@ async def _resolve_event_participants(payload: dict) -> list[str]:
     if not candidates:
         return existing
 
-    from .moss_client import moss
-
     resolved = list(existing)
     seen = set(existing)
+    from .db import fetch_persons
+    persons = await fetch_persons()
     for candidate in candidates:
-        hits = await moss.query(candidate, top_k=8)
-        person_hit = _first_person_hit(candidate, hits)
-        if not person_hit:
-            continue
-
-        person_id = person_hit["id"].split(":", 1)[-1]
-        if person_id not in seen:
-            resolved.append(person_id)
-            seen.add(person_id)
+        for person in persons:
+            names = [person.get("name"), *(person.get("aliases") or [])]
+            if any(_contains_name(candidate, str(name or "")) or str(name or "").lower() == candidate.lower() for name in names):
+                person_id = person["id"]
+                if person_id not in seen:
+                    resolved.append(person_id)
+                    seen.add(person_id)
 
     return resolved
 
@@ -340,44 +363,13 @@ def _hit_confirms_person_name(candidate: str, hit: dict) -> bool:
     )
 
 
-def _build_chunk_text(entity_type: str, payload: dict) -> str:
-    """Render a Moss chunk for a freshly-written entity. Matches the chunk
-    format in scripts/reseed_moss.py so search behaves consistently with
-    seed-time data. Edges aren't known at write-time, so relationship phrases
-    aren't included — the next reseed picks those up if Track C adds edges.
-    """
-    name = (payload.get("name") or payload.get("title") or "").strip()
-    notes = (payload.get("notes") or "").strip()
-
-    if entity_type == "person":
-        relationship = (payload.get("relationship") or "").strip()
-        aliases = payload.get("aliases") or []
-        parts = [name]
-        if relationship:
-            parts.append(relationship)
-        if notes:
-            parts.append(notes)
-        if aliases:
-            parts.append(f"Also called {', '.join(aliases)}.")
-        return ". ".join(s.rstrip(".") for s in parts if s) + "."
-
-    if entity_type == "place":
-        return f"{name}. {notes}".strip().rstrip(".") + "."
-
-    if entity_type == "medication":
-        return f"{name} — Amma's medication. {notes}".strip().rstrip(".") + "."
-
-    if entity_type == "event":
-        return f"{name}. {notes}".strip().rstrip(".") + "."
-
-    if entity_type == "story":
-        return f"Story: {notes or name}"
-
-    if entity_type == "episode":
-        return f"{payload.get('summary') or notes or name}".strip()
-
-    # med_log doesn't need a chunk (queried via Supabase by temporal)
-    return ""
+def _episodic_moss_text(entity_type: str, payload: dict) -> str:
+    if entity_type not in {"story", "episode"}:
+        return ""
+    if entity_type == "episode" and payload.get("kind") not in {None, "", "captured_fact"}:
+        return ""
+    from .chunks import render
+    return render(entity_type, payload)
 
 
 @app.post("/memory/capture", response_model=MemoryCaptureResponse)
@@ -385,8 +377,8 @@ async def memory_capture(req: MemoryCaptureRequest):
     try:
         from .capture import capture_from_transcript
         return await capture_from_transcript(req.transcript)
-    except Exception:
-        return MemoryCaptureResponse(created_refs=[])
+    except Exception as e:
+        return _maybe_fixture(e, MemoryCaptureResponse(created_refs=[]))
 
 
 @app.get("/memory/timeline", response_model=TimelineResponse)
@@ -394,8 +386,8 @@ async def memory_timeline(date: str = Query(default=None)):
     try:
         from .temporal import get_timeline
         return await get_timeline(date)
-    except Exception:
-        return FIXTURE_TIMELINE
+    except Exception as e:
+        return _maybe_fixture(e, FIXTURE_TIMELINE)
 
 
 @app.get("/reminders/due", response_model=RemindersResponse)
@@ -403,8 +395,8 @@ async def reminders_due(ts: str = Query(default=None)):
     try:
         from .reminders import get_due_reminders
         return await get_due_reminders(ts)
-    except Exception:
-        return FIXTURE_REMINDERS
+    except Exception as e:
+        return _maybe_fixture(e, FIXTURE_REMINDERS)
 
 
 @app.post("/location/ping", response_model=LocationPingResponse)
@@ -412,8 +404,8 @@ async def location_ping(req: LocationPingRequest):
     try:
         from .location import handle_ping
         return await handle_ping(req.lat, req.lng)
-    except Exception:
-        return FIXTURE_LOCATION
+    except Exception as e:
+        return _maybe_fixture(e, FIXTURE_LOCATION)
 
 
 @app.post("/vision/recognize", response_model=VisionRecognizeResponse)
@@ -421,8 +413,8 @@ async def vision_recognize(req: VisionRecognizeRequest):
     try:
         from .vision import recognize
         return await recognize(req.image_b64)
-    except Exception:
-        return FIXTURE_VISION
+    except Exception as e:
+        return _maybe_fixture(e, FIXTURE_VISION)
 
 
 @app.post("/ingest/document", response_model=IngestDocumentResponse)
@@ -442,7 +434,7 @@ async def ingest_document(file: UploadFile = File(...)):
         return IngestDocumentResponse(**result)
     except Exception as e:
         print(f"[ingest] failed: {e!r}")
-        return IngestDocumentResponse(created_refs=[], summary="", raw_extraction="")
+        return _maybe_fixture(e, IngestDocumentResponse(created_refs=[], summary="", raw_extraction=""))
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -453,12 +445,13 @@ async def health():
     try:
         from .moss_client import moss
         moss_ok = await moss.ping()
+        moss_doc_count = moss.doc_count()
     except Exception:
-        pass
+        moss_doc_count = None
     try:
         from .db import db_ping
         db_ok = await db_ping()
     except Exception:
         pass
     latency_ms = (time.perf_counter() - t0) * 1000
-    return HealthResponse(moss_ok=moss_ok, db_ok=db_ok, latency_ms=round(latency_ms, 2))
+    return HealthResponse(moss_ok=moss_ok, db_ok=db_ok, latency_ms=round(latency_ms, 2), moss_doc_count=moss_doc_count)

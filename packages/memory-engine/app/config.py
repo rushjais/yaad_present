@@ -34,14 +34,12 @@ class Settings(BaseSettings):
     unsiloed_api_key: str = ""
     unsiloed_base_url: str = "https://platformbackend.unsiloed.ai"
 
-    confidence_threshold: float = 0.45  # τ — below this → safe refusal
-
-    # retrieval scoring weights
-    alpha: float = 0.5   # semantic
-    beta: float = 0.25   # recency
-    gamma: float = 0.15  # salience
-    delta: float = 0.10  # graph proximity
-    recency_lambda: float = 0.01  # decay rate (per hour)
+    archetype_router_enabled: bool = Field(False, alias="YAAD_ARCHETYPE_ROUTER")
+    demo_mode: bool = Field(False, alias="YAAD_DEMO_MODE")
+    patient_tz: str = "America/New_York"
+    # Recalibration pending after episodic-only Moss reseed:
+    # tau=0.70/0.75/0.80/0.82/0.85 must be scored against golden + general corpus.
+    episodic_tau: float = 0.82
 
     @field_validator(
         "supabase_url", "supabase_service_key",

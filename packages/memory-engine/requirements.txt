@@ -6,10 +6,12 @@ pydantic-settings==2.7.0
 httpx==0.28.1
 supabase==2.11.0
 python-dateutil==2.9.0
-openai==1.59.2
+openai==1.59.0
 numpy==2.2.1
 moss
 pytest==8.3.4
 pytest-asyncio==0.24.0
 groq
 fpdf2==2.8.7  # smoke_unsiloed.py — synthesize a test PDF
+# Wander alerts use email-to-SMS via carrier gateways (smtplib in stdlib).
+# Twilio toll-free verification was a 3-7 day blocker — removed 2026-06-06.
